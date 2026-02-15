@@ -187,10 +187,11 @@ jobs:
           FRAPPE_EOF
           
           # Restart services (as root)
+          # nohup + sleep ensures restart happens after SSH disconnects cleanly
           echo "🔄 Restarting services..."
-          supervisorctl restart all
-          systemctl reload nginx || true
-          
+          nohup bash -c 'sleep 2 && supervisorctl restart all && systemctl reload nginx' &>/dev/null &
+          sleep 3
+
           echo "✅ Deployment updated successfully!"
           ENDSSH
 
