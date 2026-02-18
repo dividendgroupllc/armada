@@ -1,0 +1,13 @@
+[
+  {
+    "doctype": "Custom Field",
+    "name": "Stock Entry-custom_production_entry",
+    "dt": "Stock Entry",
+    "fieldname": "custom_production_entry",
+    "fieldtype": "Link",
+    "label": "Production Entry",
+    "options": "Production Entry",
+    "insert_after": "work_order",
+    "read_only": 1
+  }
+]

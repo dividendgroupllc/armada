@@ -5,6 +5,11 @@ app_description = "Armada uchun app"
 app_email = "sardorbekqamchibekov76@gmail.com"
 app_license = "mit"
 
+# Fixtures
+fixtures = [
+    {"dt": "Custom Field", "filters": [["dt", "=", "Stock Entry"], ["fieldname", "=", "custom_production_entry"]]}
+]
+
 # Apps
 # ------------------
 
