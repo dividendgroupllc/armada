@@ -117,7 +117,7 @@ function fetch_bom_items(frm) {
             qty_to_manufacture: frm.doc.qty_to_manufacture,
             posting_date: frm.doc.posting_date,
             posting_time: frm.doc.posting_time,
-            source_warehouse: frm.doc.target_warehouse || "Производственный склад - R"
+            source_warehouse: frm.doc.target_warehouse || ""
         },
         callback: function(r) {
             if (r.message) {
