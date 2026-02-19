@@ -117,6 +117,7 @@
    "reqd": 1
   },
   {
+   "default": "Склад Производство - AM",
    "fieldname": "target_warehouse",
    "fieldtype": "Link",
    "label": "Target Warehouse",

@@ -2,6 +2,13 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Production Entry', {
+    setup: function(frm) {
+        // Set default target warehouse for new documents
+        if (frm.is_new() && !frm.doc.target_warehouse) {
+            frm.set_value("target_warehouse", "Склад Производство - AM");
+        }
+    },
+
     refresh: function(frm) {
         // Set query for BOM - only show BOMs for selected item
         frm.set_query("bom_no", function() {

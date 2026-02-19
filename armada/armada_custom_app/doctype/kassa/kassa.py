@@ -192,6 +192,13 @@ class Kassa(Document):
         if not self.expense_account:
             frappe.throw(_("Пожалуйста, выберите счет расходов"))
 
+        # Expense Cost Center dan cost_center olish
+        cost_center = frappe.db.get_value(
+            "Expense Cost Center",
+            {"expense_account": self.expense_account},
+            "cost_center"
+        )
+
         je = frappe.new_doc("Journal Entry")
         je.voucher_type = "Journal Entry"
         je.posting_date = self.date
@@ -210,6 +217,7 @@ class Kassa(Document):
         # Debit expense account
         je.append("accounts", {
             "account": self.expense_account,
+            "cost_center": cost_center,
             "debit_in_account_currency": flt(self.amount),
             "debit": flt(self.amount)
         })
