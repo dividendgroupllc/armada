@@ -90,5 +90,17 @@ frappe.query_reports["DDS"] = {
         }
 
         return value;
+    },
+
+    "onload": function(report) {
+        // Prevent Link fields from triggering double refresh
+        report._original_refresh = report.refresh;
+        var _debounce_timer = null;
+        report.refresh = function() {
+            clearTimeout(_debounce_timer);
+            _debounce_timer = setTimeout(function() {
+                report._original_refresh();
+            }, 300);
+        };
     }
 }
