@@ -33,7 +33,10 @@ frappe.query_reports["DDS"] = {
             "fieldname": "party",
             "label": __("Контрагент"),
             "fieldtype": "Dynamic Link",
-            "options": "party_type"
+            "options": "party_type",
+            "get_options": function() {
+                return frappe.query_report.get_filter_value('party_type');
+            }
         },
         {
             "fieldname": "expense_account",
