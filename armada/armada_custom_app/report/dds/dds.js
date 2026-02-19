@@ -19,6 +19,58 @@ frappe.query_reports["DDS"] = {
             "label": __("Способ оплаты"),
             "fieldtype": "Link",
             "options": "Mode of Payment"
+        },
+        {
+            "fieldname": "party_type",
+            "label": __("Контрагент тури"),
+            "fieldtype": "Select",
+            "options": "\nCustomer\nSupplier\nEmployee"
+        },
+        {
+            "fieldname": "party",
+            "label": __("Контрагент"),
+            "fieldtype": "Dynamic Link",
+            "options": "party_type",
+            "get_query": function() {
+                var party_type = frappe.query_report.get_filter_value('party_type');
+                if (party_type) {
+                    return { doctype: party_type };
+                }
+            }
+        },
+        {
+            "fieldname": "expense_account",
+            "label": __("Расход аккаунт"),
+            "fieldtype": "Link",
+            "options": "Account",
+            "get_query": function() {
+                return {
+                    filters: {
+                        "root_type": "Expense",
+                        "is_group": 0
+                    }
+                };
+            }
+        },
+        {
+            "fieldname": "dividend_account",
+            "label": __("Дивиденд аккаунт"),
+            "fieldtype": "Link",
+            "options": "Account",
+            "get_query": function() {
+                return {
+                    filters: {
+                        "root_type": "Equity",
+                        "is_group": 0
+                    }
+                };
+            }
+        },
+        {
+            "fieldname": "show_transfers",
+            "label": __("Перемещения"),
+            "fieldtype": "Check",
+            "default": 1
         }
     ],
 

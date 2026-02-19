@@ -96,15 +96,51 @@ def get_data(filters):
     total_kirim = 0
     total_chiqim = 0
 
+    # Filter parametrlari
+    filter_party_type = filters.get("party_type")
+    filter_party = filters.get("party")
+    filter_expense_account = filters.get("expense_account")
+    filter_dividend_account = filters.get("dividend_account")
+    show_transfers = filters.get("show_transfers", 1)
+
     for row in transactions:
         kirim = flt(row.debit_in_account_currency)
         chiqim = flt(row.credit_in_account_currency)
-        balance += kirim - chiqim
-        total_kirim += kirim
-        total_chiqim += chiqim
 
         # Party info va category aniqlash
         info = resolve_transaction_info(row, pe_info, je_info, cash_accounts)
+
+        # Перемещения filter
+        if not show_transfers and info["category"] == "transfer":
+            balance += kirim - chiqim
+            continue
+
+        # Expense account filter
+        if filter_expense_account:
+            if info.get("expense_account") != filter_expense_account:
+                balance += kirim - chiqim
+                continue
+
+        # Dividend account filter
+        if filter_dividend_account:
+            if info.get("dividend_account") != filter_dividend_account:
+                balance += kirim - chiqim
+                continue
+
+        # Party filter
+        if filter_party_type or filter_party:
+            resolved_party_type = info.get("party_type")
+            resolved_party = info.get("party")
+            if filter_party_type and resolved_party_type != filter_party_type:
+                balance += kirim - chiqim
+                continue
+            if filter_party and resolved_party != filter_party:
+                balance += kirim - chiqim
+                continue
+
+        balance += kirim - chiqim
+        total_kirim += kirim
+        total_chiqim += chiqim
 
         data.append({
             "posting_date": row.posting_date,
@@ -238,6 +274,8 @@ def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
         return {
             "description": f"{display_name} ({suffix})",
             "category": category,
+            "party_type": row.party_type,
+            "party": row.party,
         }
 
     # 2. Payment Entry — PE dan party info olish
@@ -251,16 +289,22 @@ def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
                 return {
                     "description": f"{display_name} (Приход)",
                     "category": get_category_from_party_type(pe.party_type),
+                    "party_type": pe.party_type,
+                    "party": pe.party,
                 }
             elif pe.payment_type == "Pay":
                 return {
                     "description": f"{display_name} (Расход)",
                     "category": get_category_from_party_type(pe.party_type),
+                    "party_type": pe.party_type,
+                    "party": pe.party,
                 }
             elif pe.payment_type == "Internal Transfer":
                 return {
                     "description": f"Перемещение",
                     "category": "transfer",
+                    "party_type": None,
+                    "party": None,
                 }
 
         # Internal Transfer without party
@@ -268,6 +312,8 @@ def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
             return {
                 "description": "Перемещение",
                 "category": "transfer",
+                "party_type": None,
+                "party": None,
             }
 
     # 3. Journal Entry — JE account'lardan aniqlash
@@ -282,16 +328,24 @@ def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
                 return {
                     "description": f"{party_name or acc.party}",
                     "category": get_category_from_party_type(acc.party_type),
+                    "party_type": acc.party_type,
+                    "party": acc.party,
                 }
             if acc.root_type == "Expense":
                 return {
                     "description": f"Расходы: {acc.account_name}",
                     "category": "expense",
+                    "party_type": None,
+                    "party": None,
+                    "expense_account": acc.account,
                 }
             if acc.root_type == "Equity":
                 return {
                     "description": f"Дивиденды: {acc.account_name}",
                     "category": "dividend",
+                    "party_type": None,
+                    "party": None,
+                    "dividend_account": acc.account,
                 }
 
     # 4. Against field dan aniqlash (fallback)
@@ -310,6 +364,8 @@ def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
             return {
                 "description": f"Перемещение {direction} {is_cash}",
                 "category": "transfer",
+                "party_type": None,
+                "party": None,
             }
 
         acc_info = frappe.db.get_value(
@@ -322,30 +378,44 @@ def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
                 return {
                     "description": f"Расходы: {acc_info.account_name}",
                     "category": "expense",
+                    "party_type": None,
+                    "party": None,
+                    "expense_account": against_account,
                 }
             if acc_info.root_type == "Equity":
                 return {
                     "description": f"Дивиденды: {acc_info.account_name}",
                     "category": "dividend",
+                    "party_type": None,
+                    "party": None,
+                    "dividend_account": against_account,
                 }
             if acc_info.account_type == "Receivable":
                 return {
                     "description": acc_info.account_name,
                     "category": "customer",
+                    "party_type": "Customer",
+                    "party": None,
                 }
             if acc_info.account_type == "Payable":
                 return {
                     "description": acc_info.account_name,
                     "category": "supplier",
+                    "party_type": "Supplier",
+                    "party": None,
                 }
             return {
                 "description": acc_info.account_name,
                 "category": "other",
+                "party_type": None,
+                "party": None,
             }
 
     return {
         "description": row.voucher_no or "",
         "category": "other",
+        "party_type": None,
+        "party": None,
     }
 
 
@@ -465,6 +535,11 @@ def get_summary_html(data):
                     <td style="padding: 10px; border: 1px solid #ddd;">Перемещения</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(transfer_kirim)}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(transfer_chiqim)}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">Прочие</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(other_kirim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(other_chiqim)}</td>
                 </tr>
                 <tr style="background-color: #e3f2fd; font-weight: bold;">
                     <td style="padding: 12px; border: 1px solid #ddd; font-weight: bold;">Конечный остаток</td>
