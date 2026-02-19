@@ -39,68 +39,24 @@ frappe.query_reports["DDS"] = {
             }
         },
         {
-            "fieldname": "expense_account",
-            "label": __("Расход аккаунт"),
-            "fieldtype": "Link",
-            "options": "Account",
-            "get_query": function() {
-                var company = frappe.defaults.get_user_default("Company");
-                var filters = {
-                    "root_type": "Expense",
-                    "is_group": 0
-                };
-                if (company) filters["company"] = company;
-                return { filters: filters };
-            }
-        },
-        {
-            "fieldname": "dividend_account",
-            "label": __("Дивиденд аккаунт"),
-            "fieldtype": "Link",
-            "options": "Account",
-            "get_query": function() {
-                var company = frappe.defaults.get_user_default("Company");
-                var filters = {
-                    "root_type": "Equity",
-                    "is_group": 0
-                };
-                if (company) filters["company"] = company;
-                return { filters: filters };
-            }
-        },
-        {
-            "fieldname": "show_transfers",
-            "label": __("Перемещения"),
-            "fieldtype": "Check",
-            "default": 1
+            "fieldname": "category",
+            "label": __("Категория"),
+            "fieldtype": "Select",
+            "options": "\nПокупатели\nПоставщики\nРасходы\nДивиденды\nСотрудники\nПеремещения"
         }
     ],
 
     "formatter": function(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
 
-        // Dollar belgisini olib tashlash
         if (column.fieldtype == "Currency" && value) {
             value = value.replace(/\$/g, '');
         }
 
-        // Нач. остаток va ИТОГО qatorlarini bold qilish
         if (data && (data.is_opening || data.is_total)) {
             value = `<span style="font-weight: bold;">${value}</span>`;
         }
 
         return value;
-    },
-
-    "onload": function(report) {
-        // Prevent Link fields from triggering double refresh
-        report._original_refresh = report.refresh;
-        var _debounce_timer = null;
-        report.refresh = function() {
-            clearTimeout(_debounce_timer);
-            _debounce_timer = setTimeout(function() {
-                report._original_refresh();
-            }, 300);
-        };
     }
 }
