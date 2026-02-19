@@ -44,12 +44,13 @@ frappe.query_reports["DDS"] = {
             "fieldtype": "Link",
             "options": "Account",
             "get_query": function() {
-                return {
-                    filters: {
-                        "root_type": "Expense",
-                        "is_group": 0
-                    }
+                var company = frappe.defaults.get_user_default("Company");
+                var filters = {
+                    "root_type": "Expense",
+                    "is_group": 0
                 };
+                if (company) filters["company"] = company;
+                return { filters: filters };
             }
         },
         {
@@ -58,12 +59,13 @@ frappe.query_reports["DDS"] = {
             "fieldtype": "Link",
             "options": "Account",
             "get_query": function() {
-                return {
-                    filters: {
-                        "root_type": "Equity",
-                        "is_group": 0
-                    }
+                var company = frappe.defaults.get_user_default("Company");
+                var filters = {
+                    "root_type": "Equity",
+                    "is_group": 0
                 };
+                if (company) filters["company"] = company;
+                return { filters: filters };
             }
         },
         {
