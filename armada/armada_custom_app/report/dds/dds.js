@@ -24,19 +24,16 @@ frappe.query_reports["DDS"] = {
             "fieldname": "party_type",
             "label": __("Контрагент тури"),
             "fieldtype": "Select",
-            "options": "\nCustomer\nSupplier\nEmployee"
+            "options": "\nCustomer\nSupplier\nEmployee",
+            "on_change": function() {
+                frappe.query_report.set_filter_value('party', '');
+            }
         },
         {
             "fieldname": "party",
             "label": __("Контрагент"),
             "fieldtype": "Dynamic Link",
-            "options": "party_type",
-            "get_query": function() {
-                var party_type = frappe.query_report.get_filter_value('party_type');
-                if (party_type) {
-                    return { doctype: party_type };
-                }
-            }
+            "options": "party_type"
         },
         {
             "fieldname": "expense_account",
