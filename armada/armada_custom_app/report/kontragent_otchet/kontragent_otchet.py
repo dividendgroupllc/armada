@@ -64,7 +64,7 @@ def get_data(filters):
             "is_total_row": True
         }
         total_row.update(totals)
-        data.insert(0, total_row)
+        data.append(total_row)  # JAMI oxirgi qatorda
 
     return data
 
@@ -126,13 +126,15 @@ def calculate_party_balances(party_info, from_date, to_date):
 
 
 def get_party_currency(party_type, party):
-    """Get party currency from Party Financial Defaults"""
-    currency = frappe.db.get_value(
-        "Party Financial Defaults",
-        {"party_type": party_type, "party": party},
-        "currency"
-    )
-    return currency or "USD"
+    """Get party currency from GL Entry (most recent transaction currency)"""
+    currency = frappe.db.sql("""
+        SELECT account_currency
+        FROM `tabGL Entry`
+        WHERE party_type = %s AND party = %s AND is_cancelled = 0
+        ORDER BY posting_date DESC, creation DESC
+        LIMIT 1
+    """, (party_type, party))
+    return currency[0][0] if currency else "USD"
 
 
 def calculate_opening_balance(party_type, party, from_date, currency):
@@ -184,9 +186,9 @@ def calculate_opening_balance(party_type, party, from_date, currency):
           )
     """, (from_date, party_type, party, currency))[0][0] or 0
 
-    # Purchase Invoice
+    # Purchase Invoice NET (credit - debit): return PI ni ham hisobga olish
     pi_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
+        SELECT IFNULL(SUM(credit_in_account_currency) - SUM(debit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
@@ -245,9 +247,9 @@ def calculate_opening_balance(party_type, party, from_date, currency):
           )
     """, (from_date, party_type, party, currency))[0][0] or 0
 
-    # Sales Invoice
+    # Sales Invoice NET (debit - credit): return SI (Credit Note) ni ham hisobga olish
     si_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
+        SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
@@ -333,9 +335,9 @@ def calculate_period_balance(party_type, party, from_date, to_date, currency):
           )
     """, (from_date, to_date, party_type, party, currency))[0][0] or 0
 
-    # Purchase Invoice Credit
+    # Purchase Invoice NET Credit (return PI ni hisobga olish)
     pi_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
+        SELECT IFNULL(SUM(credit_in_account_currency) - SUM(debit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date >= %s
           AND posting_date <= %s
@@ -413,9 +415,9 @@ def calculate_period_balance(party_type, party, from_date, to_date, currency):
           AND ge.is_cancelled = 0
     """, (from_date, to_date, party_type, party, currency))[0][0] or 0
 
-    # Sales Invoice Debit
+    # Sales Invoice NET Debit (return SI ni hisobga olish)
     si_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
+        SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date >= %s
           AND posting_date <= %s

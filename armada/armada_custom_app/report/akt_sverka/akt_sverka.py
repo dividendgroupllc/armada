@@ -35,7 +35,8 @@ def get_columns():
         {"label": "Валюта", "fieldname": "currency", "fieldtype": "Link", "options": "Currency", "width": 80},
         {"label": "Кредит", "fieldname": "credit", "fieldtype": "Currency", "width": 120},
         {"label": "Дебет", "fieldname": "debit", "fieldtype": "Currency", "width": 120},
-        {"label": "Қолдиқ", "fieldname": "balance", "fieldtype": "Float", "precision": 2, "width": 120},
+        {"label": "Қолдиқ (Кред)", "fieldname": "balance_credit", "fieldtype": "Currency", "width": 120},
+        {"label": "Қолдиқ (Деб)", "fieldname": "balance_debit", "fieldtype": "Currency", "width": 120},
     ]
 
 
@@ -59,11 +60,12 @@ def get_data(filters):
     party_currency = party_currency[0][0] if party_currency else 'USD'
 
     # Boshlang'ich qoldiq (до from_date) - party valyutasida, cancelled'siz
-    # Formula: PI - SI + PE receive - PE pay + JE credit - JE debit + Opening credit - Opening debit
+    # Formula: PI_net - SI_net + PE receive - PE pay + JE credit - JE debit + Opening credit - Opening debit
+    # NET ishlatiladi: Return PI/SI (is_return=1) ni ham to'g'ri hisoblaymiz
 
-    # Purchase Invoice (PI) - credit (bizning qarzimiz oshadi)
+    # Purchase Invoice NET (credit - debit): oddiy PI credit, return PI debit yaratadi
     opening_pi = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
+        SELECT IFNULL(SUM(credit_in_account_currency) - SUM(debit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
@@ -73,9 +75,9 @@ def get_data(filters):
           AND is_cancelled = 0
     """, (from_date, party_type, party, party_currency))[0][0]
 
-    # Sales Invoice (SI) - debit (ular bizga qarzdor)
+    # Sales Invoice NET (debit - credit): oddiy SI debit, return SI credit yaratadi
     opening_si = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
+        SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
@@ -213,82 +215,150 @@ def get_data(filters):
         
         # Purchase Invoice uchun item details
         if voucher_type == "Purchase Invoice":
+            is_return_pi = frappe.db.get_value("Purchase Invoice", voucher_no, "is_return")
             items = get_purchase_invoice_items(voucher_no)
             if items:
-                # Har bir item uchun qator, lekin balance faqat oxirida
-                total_credit = sum(flt(item.get('credit', 0)) for item in items)
+                # Return PI: items manfiy (pii.amount < 0), debit ustunida ko'rsatish
+                # Oddiy PI: items musbat, credit ustunida ko'rsatish
+                total_amount = sum(flt(item.get('credit', 0)) for item in items)
 
                 for idx, item in enumerate(items):
                     is_last_item = (idx == len(items) - 1)
-                    if is_last_item:
-                        balance += total_credit  # Credit - bizning qarzimiz oshadi
+                    item_amount = flt(item.get('credit', 0))
 
+                    if is_last_item:
+                        balance += total_amount  # manfiy return uchun balance kamayadi
+
+                    if is_return_pi:
+                        # Return PI: debit ustunida ko'rsatish (abs qiymati bilan)
+                        data.append({
+                            "posting_date": gl.posting_date,
+                            "voucher_type": voucher_type + " (Возврат)",
+                            "voucher_no": voucher_no,
+                            "item_name": item.get('item_name', ''),
+                            "qty": format_qty(abs(flt(item.get('qty')))),
+                            "rate": item.get('rate'),
+                            "currency": item.get('currency', gl.currency),
+                            "credit": 0,
+                            "debit": abs(item_amount),
+                            "balance": format_balance(balance) if is_last_item else None,
+                        })
+                    else:
+                        data.append({
+                            "posting_date": gl.posting_date,
+                            "voucher_type": voucher_type,
+                            "voucher_no": voucher_no,
+                            "item_name": item.get('item_name', ''),
+                            "qty": format_qty(item.get('qty')),
+                            "rate": item.get('rate'),
+                            "currency": item.get('currency', gl.currency),
+                            "credit": item_amount,
+                            "debit": 0,
+                            "balance": format_balance(balance) if is_last_item else None,
+                        })
+            else:
+                # Agar item topilmasa, GL entry dan ko'rsatish
+                if is_return_pi:
+                    balance -= flt(gl.debit)
+                    data.append({
+                        "posting_date": gl.posting_date,
+                        "voucher_type": voucher_type + " (Возврат)",
+                        "voucher_no": voucher_no,
+                        "item_name": "",
+                        "qty": None,
+                        "rate": None,
+                        "currency": gl.currency,
+                        "credit": 0,
+                        "debit": gl.debit,
+                        "balance": format_balance(balance),
+                    })
+                else:
+                    balance += flt(gl.credit)
                     data.append({
                         "posting_date": gl.posting_date,
                         "voucher_type": voucher_type,
                         "voucher_no": voucher_no,
-                        "item_name": item.get('item_name', ''),
-                        "qty": format_qty(item.get('qty')),
-                        "rate": item.get('rate'),
-                        "currency": item.get('currency', gl.currency),
-                        "credit": item.get('credit', 0),
+                        "item_name": "",
+                        "qty": None,
+                        "rate": None,
+                        "currency": gl.currency,
+                        "credit": gl.credit,
                         "debit": 0,
-                        "balance": format_balance(balance) if is_last_item else None,
+                        "balance": format_balance(balance),
                     })
-            else:
-                # Agar item topilmasa, faqat GL entry ko'rsatish
-                balance += flt(gl.credit)  # Credit oshadi
-                data.append({
-                    "posting_date": gl.posting_date,
-                    "voucher_type": voucher_type,
-                    "voucher_no": voucher_no,
-                    "item_name": "",
-                    "qty": None,
-                    "rate": None,
-                    "currency": gl.currency,
-                    "credit": gl.credit,
-                    "debit": 0,
-                    "balance": format_balance(balance),
-                })
         
         # Sales Invoice uchun item details
         elif voucher_type == "Sales Invoice":
+            is_return_si = frappe.db.get_value("Sales Invoice", voucher_no, "is_return")
             items = get_sales_invoice_items(voucher_no)
             if items:
-                # Har bir item uchun qator, lekin balance faqat oxirida
-                total_debit = sum(flt(item.get('debit', 0)) for item in items)
+                # Return SI (Credit Note): items manfiy, credit ustunida ko'rsatish
+                # Oddiy SI: items musbat, debit ustunida ko'rsatish
+                total_amount = sum(flt(item.get('debit', 0)) for item in items)
 
                 for idx, item in enumerate(items):
                     is_last_item = (idx == len(items) - 1)
-                    if is_last_item:
-                        balance -= total_debit  # Debit - to'lov qildik, qarz kamayadi
+                    item_amount = flt(item.get('debit', 0))
 
+                    if is_last_item:
+                        balance -= total_amount  # manfiy return uchun balance oshadi
+
+                    if is_return_si:
+                        # Return SI (Credit Note): credit ustunida ko'rsatish
+                        data.append({
+                            "posting_date": gl.posting_date,
+                            "voucher_type": voucher_type + " (Возврат)",
+                            "voucher_no": voucher_no,
+                            "item_name": item.get('item_name', ''),
+                            "qty": format_qty(abs(flt(item.get('qty')))),
+                            "rate": item.get('rate'),
+                            "currency": item.get('currency', gl.currency),
+                            "credit": abs(item_amount),
+                            "debit": 0,
+                            "balance": format_balance(balance) if is_last_item else None,
+                        })
+                    else:
+                        data.append({
+                            "posting_date": gl.posting_date,
+                            "voucher_type": voucher_type,
+                            "voucher_no": voucher_no,
+                            "item_name": item.get('item_name', ''),
+                            "qty": format_qty(item.get('qty')),
+                            "rate": item.get('rate'),
+                            "currency": item.get('currency', gl.currency),
+                            "credit": 0,
+                            "debit": item_amount,
+                            "balance": format_balance(balance) if is_last_item else None,
+                        })
+            else:
+                if is_return_si:
+                    balance += flt(gl.credit)
+                    data.append({
+                        "posting_date": gl.posting_date,
+                        "voucher_type": voucher_type + " (Возврат)",
+                        "voucher_no": voucher_no,
+                        "item_name": "",
+                        "qty": None,
+                        "rate": None,
+                        "currency": gl.currency,
+                        "credit": gl.credit,
+                        "debit": 0,
+                        "balance": format_balance(balance),
+                    })
+                else:
+                    balance -= flt(gl.debit)
                     data.append({
                         "posting_date": gl.posting_date,
                         "voucher_type": voucher_type,
                         "voucher_no": voucher_no,
-                        "item_name": item.get('item_name', ''),
-                        "qty": format_qty(item.get('qty')),
-                        "rate": item.get('rate'),
-                        "currency": item.get('currency', gl.currency),
+                        "item_name": "",
+                        "qty": None,
+                        "rate": None,
+                        "currency": gl.currency,
                         "credit": 0,
-                        "debit": item.get('debit', 0),
-                        "balance": format_balance(balance) if is_last_item else None,
+                        "debit": gl.debit,
+                        "balance": format_balance(balance),
                     })
-            else:
-                balance -= flt(gl.debit)  # Debit kamayadi
-                data.append({
-                    "posting_date": gl.posting_date,
-                    "voucher_type": voucher_type,
-                    "voucher_no": voucher_no,
-                    "item_name": "",
-                    "qty": None,
-                    "rate": None,
-                    "currency": gl.currency,
-                    "credit": 0,
-                    "debit": gl.debit,
-                    "balance": format_balance(balance),
-                })
         
         # Payment Entry uchun
         elif voucher_type == "Payment Entry":
@@ -384,6 +454,19 @@ def get_data(filters):
             "debit": total_debit,
             "balance": format_balance(balance),  # Oxirgi balance party valyutasida
         })
+
+    # Balance kolonnasini 2 ta kolonnaga bo'lish:
+    # balance_credit = biz ularga qarzdormiz (musbat)
+    # balance_debit  = ular bizga qarzdor (manfiy balance ning absolut qiymati)
+    for row in data:
+        raw_balance = row.pop('balance', None)
+        if raw_balance is not None:
+            v = flt(raw_balance)
+            row['balance_credit'] = round(v, 2) if v > 0 else 0
+            row['balance_debit'] = round(abs(v), 2) if v < 0 else 0
+        else:
+            row['balance_credit'] = None
+            row['balance_debit'] = None
 
     return data
 
@@ -483,16 +566,19 @@ def get_summary_html(data, filters):
     if not data or len(data) <= 1:
         return ""
     
-    # Opening balance
-    opening_balance = data[0].get('balance', 0) if data else 0
-    
+    # Opening balance (balance_credit - balance_debit)
+    opening_row = data[0] if data else {}
+    opening_balance = flt(opening_row.get('balance_credit', 0)) - flt(opening_row.get('balance_debit', 0))
+
     # Closing balance (Total qatoridan yoki oxirgi qatordan)
     closing_balance = 0
     total_row = [r for r in data if r.get('voucher_type') == 'Total']
     if total_row:
-        closing_balance = total_row[0].get('balance', 0)
+        tr = total_row[0]
+        closing_balance = flt(tr.get('balance_credit', 0)) - flt(tr.get('balance_debit', 0))
     elif data:
-        closing_balance = data[-1].get('balance', 0)
+        lr = data[-1]
+        closing_balance = flt(lr.get('balance_credit', 0)) - flt(lr.get('balance_debit', 0))
     
     # Ostatok nachalo - Opening balance ni Credit/Debit ga bo'lish
     opening_credit = opening_balance if opening_balance > 0 else 0
