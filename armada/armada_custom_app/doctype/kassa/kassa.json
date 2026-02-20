@@ -210,6 +210,25 @@
    "label": "Примечание"
   },
   {
+   "fieldname": "section_break_linked",
+   "fieldtype": "Section Break",
+   "label": "Связанный документ"
+  },
+  {
+   "fieldname": "linked_doctype",
+   "fieldtype": "Data",
+   "label": "Тип документа",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "linked_entry",
+   "fieldtype": "Dynamic Link",
+   "label": "Связанный документ",
+   "options": "linked_doctype",
+   "read_only": 1
+  },
+  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",

@@ -62,6 +62,11 @@ class Kassa(Document):
         pe.insert()
         pe.submit()
 
+        frappe.db.set_value("Kassa", self.name, {
+            "linked_doctype": "Payment Entry",
+            "linked_entry": pe.name
+        })
+
         frappe.msgprint(_("Payment Entry {0} создан").format(
             frappe.utils.get_link_to_form("Payment Entry", pe.name)
         ))
@@ -183,6 +188,11 @@ class Kassa(Document):
         je.insert()
         je.submit()
 
+        frappe.db.set_value("Kassa", self.name, {
+            "linked_doctype": "Journal Entry",
+            "linked_entry": je.name
+        })
+
         frappe.msgprint(_("Journal Entry {0} для дивидендов создан").format(
             frappe.utils.get_link_to_form("Journal Entry", je.name)
         ))
@@ -226,6 +236,11 @@ class Kassa(Document):
         je.insert()
         je.submit()
 
+        frappe.db.set_value("Kassa", self.name, {
+            "linked_doctype": "Journal Entry",
+            "linked_entry": je.name
+        })
+
         frappe.msgprint(_("Journal Entry {0} для расходов создан").format(
             frappe.utils.get_link_to_form("Journal Entry", je.name)
         ))
@@ -252,6 +267,11 @@ class Kassa(Document):
         pe.flags.ignore_permissions = True
         pe.insert()
         pe.submit()
+
+        frappe.db.set_value("Kassa", self.name, {
+            "linked_doctype": "Payment Entry",
+            "linked_entry": pe.name
+        })
 
         frappe.msgprint(_("Payment Entry {0} для перемещения создан").format(
             frappe.utils.get_link_to_form("Payment Entry", pe.name)
