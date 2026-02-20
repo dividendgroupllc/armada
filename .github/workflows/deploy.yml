@@ -164,12 +164,9 @@ jobs:
           
           cd \${BENCH_PATH}
           
-          # Install dependencies
-          echo "📦 Installing Python dependencies..."
-          bench setup requirements || true
-
-          # Fix: setuptools>=82 removed pkg_resources (dropbox needs it)
-          pip install "setuptools<81" dropbox~=11.36.2 2>/dev/null || true
+          # NOTE: bench setup requirements olib tashlandi.
+          # Sabab: har deployda setuptools 82+ o'rnatib, pkg_resources ni buzadi.
+          # Yangi dependency qo'shsangiz, serverda qo'lda: pip install <package>
 
           # Build assets (Live - no downtime)
           echo "🎨 Building frontend assets..."
