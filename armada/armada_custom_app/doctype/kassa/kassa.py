@@ -149,13 +149,13 @@ class Kassa(Document):
             )
 
     def create_dividend_journal_entry(self):
-        """Dividend uchun Journal Entry yaratish (3400 accountga)"""
-        # Get dividend account (3400)
+        """Dividend uchun Journal Entry yaratish (3200 accountga)"""
+        # Get dividend account (3200)
         dividend_account = frappe.db.get_value("Account",
-            {"company": self.company, "account_number": "3400", "is_group": 0}, "name")
+            {"company": self.company, "account_number": "3200", "is_group": 0}, "name")
 
         if not dividend_account:
-            frappe.throw(_("Счет дивидендов (3400) не найден для компании {0}").format(self.company))
+            frappe.throw(_("Счет дивидендов (3200) не найден для компании {0}").format(self.company))
 
         je = frappe.new_doc("Journal Entry")
         je.voucher_type = "Journal Entry"

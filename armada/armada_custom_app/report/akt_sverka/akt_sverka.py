@@ -59,7 +59,7 @@ def get_data(filters):
     party_currency = party_currency[0][0] if party_currency else 'USD'
 
     # Boshlang'ich qoldiq (до from_date) - party valyutasida, cancelled'siz
-    # Formula: PI - SI + PE receive - PE pay + JE credit - JE debit + Opening credit - Opening debit + Salary
+    # Formula: PI - SI + PE receive - PE pay + JE credit - JE debit + Opening credit - Opening debit
 
     # Purchase Invoice (PI) - credit (bizning qarzimiz oshadi)
     opening_pi = frappe.db.sql("""
@@ -151,25 +151,12 @@ def get_data(filters):
     opening_op_credit = opening_entry.get('op_credit', 0)
     opening_op_debit = opening_entry.get('op_debit', 0)
 
-    # Salary Slip'lardan (faqat Employee uchun)
-    opening_salary = 0
-    if party_type == "Employee":
-        opening_salary = frappe.db.sql("""
-            SELECT
-                IFNULL(SUM(gross_pay), 0)
-            FROM `tabSalary Slip`
-            WHERE posting_date < %s
-              AND employee = %s
-              AND docstatus = 1
-        """, (from_date, party))[0][0]
-
-    # Formula: PI - SI + PE receive - PE pay + JE credit - JE debit + OP credit - OP debit + Salary
+    # Formula: PI - SI + PE receive - PE pay + JE credit - JE debit + OP credit - OP debit
     opening_balance = (
         flt(opening_pi) - flt(opening_si) +
         flt(opening_pe_receive) - flt(opening_pe_pay) +
         flt(opening_je_credit) - flt(opening_je_debit) +
-        flt(opening_op_credit) - flt(opening_op_debit) +
-        flt(opening_salary)
+        flt(opening_op_credit) - flt(opening_op_debit)
     )
 
     data = []
@@ -210,30 +197,8 @@ def get_data(filters):
         ORDER BY gl.posting_date ASC, gl.creation ASC
     """, (from_date, to_date, party_type, party, party_currency), as_dict=True)
 
-    # Salary Slip'larni olish (Employee uchun)
-    salary_slips = []
-    if party_type == "Employee":
-        salary_slips = frappe.db.sql("""
-            SELECT 
-                posting_date,
-                name as voucher_no,
-                employee_name,
-                currency,
-                gross_pay as credit,
-                0 as debit
-            FROM `tabSalary Slip`
-            WHERE posting_date BETWEEN %s AND %s
-              AND employee = %s
-              AND docstatus = 1
-            ORDER BY posting_date ASC
-        """, (from_date, to_date, party), as_dict=True)
-        
-        # Salary Slip'larni GL entries bilan birlashtirish
-        for ss in salary_slips:
-            ss['voucher_type'] = 'Salary Slip'
-    
-    # GL Entry va Salary Slip'larni birlashtirish va sanaga qarab tartiblash
-    all_entries = list(gl_entries) + list(salary_slips)
+    # GL Entry'larni sanaga qarab tartiblash
+    all_entries = list(gl_entries)
     all_entries.sort(key=lambda x: x['posting_date'])
 
     balance = opening_balance  # Balance party valyutasida
@@ -243,25 +208,7 @@ def get_data(filters):
         voucher_type = entry.get('voucher_type')
         voucher_no = entry.get('voucher_no')
         
-        # Salary Slip uchun
-        if voucher_type == "Salary Slip":
-            balance += flt(entry.get('credit', 0))  # Salary - credit (bizning qarzimiz oshadi)
-
-            data.append({
-                "posting_date": entry.posting_date,
-                "voucher_type": voucher_type,
-                "voucher_no": voucher_no,
-                "item_name": entry.get('employee_name', ''),
-                "qty": None,
-                "rate": None,
-                "currency": entry.get('currency', party_currency),
-                "credit": entry.get('credit', 0),
-                "debit": 0,
-                "balance": format_balance(balance),
-            })
-            continue
-        
-        # GL Entry'lar uchun (eski kod)
+        # GL Entry'lar uchun
         gl = entry
         
         # Purchase Invoice uchun item details
@@ -563,11 +510,11 @@ def get_summary_html(data, filters):
     money_debit = sum(flt(r.get('debit', 0)) for r in data 
                       if r.get('voucher_type') == 'Payment Entry')
     
-    # Nachisleniya (Accruals) - Journal Entry + Salary Slip
+    # Nachisleniya (Accruals) - Journal Entry
     accruals_credit = sum(flt(r.get('credit', 0)) for r in data 
-                          if r.get('voucher_type') in ['Journal Entry', 'Salary Slip'])
+                          if r.get('voucher_type') == 'Journal Entry')
     accruals_debit = sum(flt(r.get('debit', 0)) for r in data 
-                         if r.get('voucher_type') in ['Journal Entry', 'Salary Slip'])
+                         if r.get('voucher_type') == 'Journal Entry')
     
     # Ostatok nakones
     closing_credit = closing_balance if closing_balance > 0 else 0

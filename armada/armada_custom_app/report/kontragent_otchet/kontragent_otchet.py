@@ -71,7 +71,7 @@ def get_data(filters):
 
 def get_parties(party_type=None, party=None):
     """Get list of parties based on filters"""
-    conditions = ["party IS NOT NULL", "party != ''", "party_type IS NOT NULL", "party_type != ''"]
+    conditions = ["party IS NOT NULL", "party != ''", "party_type IS NOT NULL", "party_type != ''", "party_type != 'Employee'"]
     values = []
 
     if party:
