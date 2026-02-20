@@ -64,7 +64,6 @@ class Kassa(Document):
 
         frappe.db.set_value("Kassa", self.name, "linked_doctype", "Payment Entry", update_modified=False)
         frappe.db.set_value("Kassa", self.name, "linked_entry", pe.name, update_modified=False)
-        frappe.db.commit()
 
         frappe.msgprint(_("Payment Entry {0} создан").format(
             frappe.utils.get_link_to_form("Payment Entry", pe.name)
@@ -189,7 +188,6 @@ class Kassa(Document):
 
         frappe.db.set_value("Kassa", self.name, "linked_doctype", "Journal Entry", update_modified=False)
         frappe.db.set_value("Kassa", self.name, "linked_entry", je.name, update_modified=False)
-        frappe.db.commit()
 
         frappe.msgprint(_("Journal Entry {0} для дивидендов создан").format(
             frappe.utils.get_link_to_form("Journal Entry", je.name)
@@ -236,7 +234,6 @@ class Kassa(Document):
 
         frappe.db.set_value("Kassa", self.name, "linked_doctype", "Journal Entry", update_modified=False)
         frappe.db.set_value("Kassa", self.name, "linked_entry", je.name, update_modified=False)
-        frappe.db.commit()
 
         frappe.msgprint(_("Journal Entry {0} для расходов создан").format(
             frappe.utils.get_link_to_form("Journal Entry", je.name)
@@ -267,7 +264,6 @@ class Kassa(Document):
 
         frappe.db.set_value("Kassa", self.name, "linked_doctype", "Payment Entry", update_modified=False)
         frappe.db.set_value("Kassa", self.name, "linked_entry", pe.name, update_modified=False)
-        frappe.db.commit()
 
         frappe.msgprint(_("Payment Entry {0} для перемещения создан").format(
             frappe.utils.get_link_to_form("Payment Entry", pe.name)
