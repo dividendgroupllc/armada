@@ -103,25 +103,24 @@ def calculate_party_balances(party_info, from_date, to_date):
 
     currency = get_party_currency(party_type, party)
 
-    opening_usd = calculate_opening_balance(party_type, party, from_date, "USD")
-    period_usd = calculate_period_balance(party_type, party, from_date, to_date, "USD")
+    opening = calculate_opening_balance(party_type, party, from_date)
+    period = calculate_period_balance(party_type, party, from_date, to_date)
 
-    final_usd_net = (opening_usd['credit'] - opening_usd['debit']) + (period_usd['credit'] - period_usd['debit'])
-
-    final_credit_usd = final_usd_net if final_usd_net > 0 else 0
-    final_debit_usd = abs(final_usd_net) if final_usd_net < 0 else 0
+    opening_net = flt(opening['credit'] - opening['debit'], 2)
+    period_net = flt(period['credit'] - period['debit'], 2)
+    final_net = flt(opening_net + period_net, 2)
 
     return {
         "party_type": party_type,
         "party": party,
         "currency": currency,
         "akt_sverka_link": "Акт Сверка",
-        "opening_credit_usd": opening_usd['credit'] if opening_usd['credit'] > 0 else 0,
-        "opening_debit_usd": opening_usd['debit'] if opening_usd['debit'] > 0 else 0,
-        "period_credit_usd": period_usd['credit'],
-        "period_debit_usd": period_usd['debit'],
-        "final_credit_usd": final_credit_usd,
-        "final_debit_usd": final_debit_usd,
+        "opening_credit_usd": opening_net if opening_net > 0 else 0,
+        "opening_debit_usd": abs(opening_net) if opening_net < 0 else 0,
+        "period_credit_usd": flt(period['credit'], 2),
+        "period_debit_usd": flt(period['debit'], 2),
+        "final_credit_usd": final_net if final_net > 0 else 0,
+        "final_debit_usd": abs(final_net) if final_net < 0 else 0,
     }
 
 
@@ -137,297 +136,34 @@ def get_party_currency(party_type, party):
     return currency[0][0] if currency else "USD"
 
 
-def calculate_opening_balance(party_type, party, from_date, currency):
-    """
-    Calculate opening balance before from_date for a specific currency
-
-    Credit calculation:
-    + Journal Entry (Opening Entry) Credit
-    + Purchase Invoice
-    + Payment Entry Receive
-    + Journal Entry (Journal Entry) Credit
-
-    Debit calculation:
-    + Journal Entry (Opening Entry) Debit
-    + Sales Invoice
-    + Payment Entry Pay
-    + Journal Entry (Journal Entry) Debit
-    """
-
-    # Journal Entry Opening Entry Credit
-    je_opening_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
+def calculate_opening_balance(party_type, party, from_date):
+    """Calculate opening balance before from_date — all GL entries for the party"""
+    result = frappe.db.sql("""
+        SELECT
+            IFNULL(SUM(credit_in_account_currency), 0) as credit,
+            IFNULL(SUM(debit_in_account_currency), 0) as debit
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
           AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
           AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Opening Entry'
-          )
-    """, (from_date, party_type, party, currency))[0][0] or 0
+    """, (from_date, party_type, party), as_dict=True)[0]
 
-    # Journal Entry Journal Entry Credit
-    je_journal_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date < %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
-          AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Journal Entry'
-          )
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    # Purchase Invoice NET (credit - debit): return PI ni ham hisobga olish
-    pi_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency) - SUM(debit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date < %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Purchase Invoice'
-          AND account_currency = %s
-          AND is_cancelled = 0
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    # Payment Entry Receive
-    pe_receive_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(ge.credit_in_account_currency), 0)
-        FROM `tabGL Entry` ge
-        INNER JOIN `tabPayment Entry` pe ON ge.voucher_no = pe.name
-        WHERE ge.posting_date < %s
-          AND ge.party_type = %s
-          AND ge.party = %s
-          AND ge.voucher_type = 'Payment Entry'
-          AND pe.payment_type = 'Receive'
-          AND ge.account_currency = %s
-          AND ge.is_cancelled = 0
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    total_credit = je_opening_credit + je_journal_credit + pi_credit + pe_receive_credit
-
-    # Debit calculations
-    # Journal Entry Opening Entry Debit
-    je_opening_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date < %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
-          AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Opening Entry'
-          )
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    # Journal Entry Journal Entry Debit
-    je_journal_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date < %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
-          AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Journal Entry'
-          )
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    # Sales Invoice NET (debit - credit): return SI (Credit Note) ni ham hisobga olish
-    si_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date < %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Sales Invoice'
-          AND account_currency = %s
-          AND is_cancelled = 0
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    # Payment Entry Pay
-    pe_pay_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(ge.debit_in_account_currency), 0)
-        FROM `tabGL Entry` ge
-        INNER JOIN `tabPayment Entry` pe ON ge.voucher_no = pe.name
-        WHERE ge.posting_date < %s
-          AND ge.party_type = %s
-          AND ge.party = %s
-          AND ge.voucher_type = 'Payment Entry'
-          AND pe.payment_type = 'Pay'
-          AND ge.account_currency = %s
-          AND ge.is_cancelled = 0
-    """, (from_date, party_type, party, currency))[0][0] or 0
-
-    total_debit = je_opening_debit + je_journal_debit + si_debit + pe_pay_debit
-
-    # Calculate net and determine credit/debit
-    net = total_credit - total_debit
-
-    if net > 0:
-        return {"credit": net, "debit": 0}
-    else:
-        return {"credit": 0, "debit": abs(net)}
+    return {"credit": flt(result.credit, 2), "debit": flt(result.debit, 2)}
 
 
-def calculate_period_balance(party_type, party, from_date, to_date, currency):
-    """
-    Calculate period balance from from_date to to_date for a specific currency
-
-    Credit calculation:
-    + Opening Entry Credit
-    + Journal Entry Credit
-    + Purchase Invoice
-    + Payment Entry Receive
-
-    Debit calculation:
-    + Opening Entry Debit
-    + Journal Entry Debit
-    + Payment Entry Pay
-    + Sales Invoice
-    """
-
-    # Opening Entry Credit
-    opening_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
+def calculate_period_balance(party_type, party, from_date, to_date):
+    """Calculate period balance from from_date to to_date — all GL entries for the party"""
+    result = frappe.db.sql("""
+        SELECT
+            IFNULL(SUM(credit_in_account_currency), 0) as credit,
+            IFNULL(SUM(debit_in_account_currency), 0) as debit
         FROM `tabGL Entry`
         WHERE posting_date >= %s
           AND posting_date <= %s
           AND party_type = %s
           AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
           AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Opening Entry'
-          )
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
+    """, (from_date, to_date, party_type, party), as_dict=True)[0]
 
-    # Journal Entry Credit
-    je_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date >= %s
-          AND posting_date <= %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
-          AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Journal Entry'
-          )
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    # Purchase Invoice NET Credit (return PI ni hisobga olish)
-    pi_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency) - SUM(debit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date >= %s
-          AND posting_date <= %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Purchase Invoice'
-          AND account_currency = %s
-          AND is_cancelled = 0
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    # Payment Entry Receive Credit
-    pe_receive_credit = frappe.db.sql("""
-        SELECT IFNULL(SUM(ge.credit_in_account_currency), 0)
-        FROM `tabGL Entry` ge
-        INNER JOIN `tabPayment Entry` pe ON ge.voucher_no = pe.name
-        WHERE ge.posting_date >= %s
-          AND ge.posting_date <= %s
-          AND ge.party_type = %s
-          AND ge.party = %s
-          AND ge.voucher_type = 'Payment Entry'
-          AND pe.payment_type = 'Receive'
-          AND ge.account_currency = %s
-          AND ge.is_cancelled = 0
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    total_credit = opening_credit + je_credit + pi_credit + pe_receive_credit
-
-    # Debit calculations
-    # Opening Entry Debit
-    opening_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date >= %s
-          AND posting_date <= %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
-          AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Opening Entry'
-          )
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    # Journal Entry Debit
-    je_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date >= %s
-          AND posting_date <= %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Journal Entry'
-          AND account_currency = %s
-          AND is_cancelled = 0
-          AND voucher_no IN (
-              SELECT name FROM `tabJournal Entry`
-              WHERE voucher_type = 'Journal Entry'
-          )
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    # Payment Entry Pay Debit
-    pe_pay_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(ge.debit_in_account_currency), 0)
-        FROM `tabGL Entry` ge
-        INNER JOIN `tabPayment Entry` pe ON ge.voucher_no = pe.name
-        WHERE ge.posting_date >= %s
-          AND ge.posting_date <= %s
-          AND ge.party_type = %s
-          AND ge.party = %s
-          AND ge.voucher_type = 'Payment Entry'
-          AND pe.payment_type = 'Pay'
-          AND ge.account_currency = %s
-          AND ge.is_cancelled = 0
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    # Sales Invoice NET Debit (return SI ni hisobga olish)
-    si_debit = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
-        FROM `tabGL Entry`
-        WHERE posting_date >= %s
-          AND posting_date <= %s
-          AND party_type = %s
-          AND party = %s
-          AND voucher_type = 'Sales Invoice'
-          AND account_currency = %s
-          AND is_cancelled = 0
-    """, (from_date, to_date, party_type, party, currency))[0][0] or 0
-
-    total_debit = opening_debit + je_debit + pe_pay_debit + si_debit
-
-    return {"credit": total_credit, "debit": total_debit}
+    return {"credit": flt(result.credit, 2), "debit": flt(result.debit, 2)}
