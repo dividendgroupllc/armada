@@ -1,0 +1,29 @@
+/* Armada Dashboard - Frappe Page Overrides */
+/* This file provides minimal overrides to hide Frappe's default page containers */
+/* Main styles are in page/armada_dashboard/armada_dashboard.css */
+
+/* Hide Frappe's default page elements when on dashboard page */
+.page-container[data-page="armada-dashboard"] .page-head,
+.page-container[data-page="armada-dashboard"] .container.page-body > .row > .layout-main-section-wrapper {
+    display: none !important;
+}
+
+/* Make page body full width */
+.page-container[data-page="armada-dashboard"] .container.page-body {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Override Frappe layout wrappers */
+.page-container[data-page="armada-dashboard"] .layout-main-section-wrapper,
+.page-container[data-page="armada-dashboard"] .layout-main-section {
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+/* Hide main section container on this page */
+.page-container[data-page="armada-dashboard"] > .container.page-body {
+    background: transparent !important;
+}

@@ -15,6 +15,15 @@ fixtures = [
 
 # required_apps = []
 
+add_to_apps_screen = [
+	{
+		"name": "armada",
+		"logo": "/assets/armada/images/armada-logo.png",
+		"title": "Armada Dashboard",
+		"route": "/app/armada-dashboard",
+	}
+]
+
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
@@ -28,6 +37,12 @@ fixtures = [
 
 # Includes in <head>
 # ------------------
+
+app_include_css = "/assets/armada/css/armada-dashboard.css"
+app_include_js = [
+	"https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js",
+	"/assets/armada/js/armada-dashboard.bundle.js"
+]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/armada/css/armada.css"
@@ -152,6 +167,14 @@ fixtures = [
 
 # Scheduled Tasks
 # ---------------
+
+scheduler_events = {
+	"cron": {
+		"*/3 * * * *": [
+			"armada.armada_custom_app.api.counterparties.refresh_counterparty_cache"
+		]
+	}
+}
 
 # scheduler_events = {
 # 	"all": [
