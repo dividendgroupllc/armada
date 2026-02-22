@@ -1,0 +1,51 @@
+{
+  "charts": [],
+  "content": "[{\"id\":\"0x1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Armada Dashboard</b></span>\",\"col\":12}},{\"id\":\"0x2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Armada Dashboard\",\"col\":4}},{\"id\":\"0x3\",\"type\":\"spacer\",\"data\":{\"col\":12}}]",
+  "creation": "2026-02-04 10:00:00.000000",
+  "custom_blocks": [],
+  "docstatus": 0,
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 0,
+  "icon": "dashboard",
+  "idx": 0,
+  "is_hidden": 0,
+  "label": "Armada",
+  "links": [
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Dashboard",
+      "link_count": 0,
+      "link_to": "armada-dashboard",
+      "link_type": "Page",
+      "onboard": 0,
+      "type": "Link"
+    }
+  ],
+  "modified": "2026-02-04 10:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Armada Custom app",
+  "name": "Armada",
+  "number_cards": [],
+  "owner": "Administrator",
+  "parent_page": "",
+  "public": 1,
+  "quick_lists": [],
+  "restrict_to_domain": "",
+  "roles": [],
+  "sequence_id": 1,
+  "shortcuts": [
+    {
+      "color": "Blue",
+      "doc_view": "",
+      "format": "",
+      "label": "Armada Dashboard",
+      "link_to": "armada-dashboard",
+      "restrict_to_domain": "",
+      "stats_filter": "",
+      "type": "Page"
+    }
+  ],
+  "title": "Armada"
+}
