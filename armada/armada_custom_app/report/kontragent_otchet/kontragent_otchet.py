@@ -34,10 +34,62 @@ def get_data(filters):
     party_type = filters.get("party_type")
     party = filters.get("party")
 
-    parties = get_parties(party_type, party)
+    conditions = [
+        "party IS NOT NULL",
+        "party != ''",
+        "party_type IS NOT NULL",
+        "party_type != ''",
+        "party_type != 'Employee'",
+        "is_cancelled = 0",
+    ]
+    values = {}
+
+    if party:
+        conditions.append("party = %(party)s")
+        values["party"] = party
+
+    if party_type:
+        conditions.append("party_type = %(party_type)s")
+        values["party_type"] = party_type
+
+    values["from_date"] = from_date
+    values["to_date"] = to_date
+
+    where_clause = " AND ".join(conditions)
+
+    results = frappe.db.sql("""
+        SELECT
+            party_type,
+            party,
+            IFNULL(SUM(CASE WHEN posting_date < %(from_date)s THEN credit_in_account_currency ELSE 0 END), 0) as opening_credit,
+            IFNULL(SUM(CASE WHEN posting_date < %(from_date)s THEN debit_in_account_currency ELSE 0 END), 0) as opening_debit,
+            IFNULL(SUM(CASE WHEN posting_date BETWEEN %(from_date)s AND %(to_date)s THEN credit_in_account_currency ELSE 0 END), 0) as period_credit,
+            IFNULL(SUM(CASE WHEN posting_date BETWEEN %(from_date)s AND %(to_date)s THEN debit_in_account_currency ELSE 0 END), 0) as period_debit
+        FROM `tabGL Entry`
+        WHERE {where_clause}
+          AND posting_date <= %(to_date)s
+        GROUP BY party_type, party
+        ORDER BY party_type, party
+    """.format(where_clause=where_clause), values, as_dict=True)
+
+    currency_results = frappe.db.sql("""
+        SELECT party_type, party, account_currency
+        FROM `tabGL Entry` ge1
+        WHERE {where_clause}
+          AND creation = (
+              SELECT MAX(creation) FROM `tabGL Entry` ge2
+              WHERE ge2.party_type = ge1.party_type
+                AND ge2.party = ge1.party
+                AND ge2.is_cancelled = 0
+          )
+        GROUP BY party_type, party
+    """.format(where_clause=where_clause), values, as_dict=True)
+
+    currency_map = {}
+    for c in currency_results:
+        currency_map[(c.party_type, c.party)] = c.account_currency
 
     data = []
-
     totals = {
         "opening_credit_usd": 0,
         "opening_debit_usd": 0,
@@ -47,13 +99,30 @@ def get_data(filters):
         "final_debit_usd": 0,
     }
 
-    for party_info in parties:
-        row = calculate_party_balances(party_info, from_date, to_date)
-        if row:
-            data.append(row)
+    for r in results:
+        opening_net = flt(r.opening_credit - r.opening_debit, 2)
+        period_credit = flt(r.period_credit, 2)
+        period_debit = flt(r.period_debit, 2)
+        final_net = flt(opening_net + period_credit - period_debit, 2)
 
-            for key in totals:
-                totals[key] += row.get(key, 0)
+        currency = currency_map.get((r.party_type, r.party), "USD")
+
+        row = {
+            "party_type": r.party_type,
+            "party": r.party,
+            "currency": currency,
+            "akt_sverka_link": "Акт Сверка",
+            "opening_credit_usd": opening_net if opening_net > 0 else 0,
+            "opening_debit_usd": abs(opening_net) if opening_net < 0 else 0,
+            "period_credit_usd": period_credit,
+            "period_debit_usd": period_debit,
+            "final_credit_usd": final_net if final_net > 0 else 0,
+            "final_debit_usd": abs(final_net) if final_net < 0 else 0,
+        }
+        data.append(row)
+
+        for key in totals:
+            totals[key] += row.get(key, 0)
 
     if data:
         total_row = {
@@ -64,106 +133,6 @@ def get_data(filters):
             "is_total_row": True
         }
         total_row.update(totals)
-        data.append(total_row)  # JAMI oxirgi qatorda
+        data.append(total_row)
 
     return data
-
-
-def get_parties(party_type=None, party=None):
-    """Get list of parties based on filters"""
-    conditions = ["party IS NOT NULL", "party != ''", "party_type IS NOT NULL", "party_type != ''", "party_type != 'Employee'"]
-    values = []
-
-    if party:
-        # Specific party
-        conditions.append("party = %s")
-        values.append(party)
-
-    if party_type:
-        conditions.append("party_type = %s")
-        values.append(party_type)
-
-    where_clause = "WHERE " + " AND ".join(conditions)
-
-    query = f"""
-        SELECT DISTINCT party_type, party
-        FROM `tabGL Entry`
-        {where_clause}
-        ORDER BY party_type, party
-    """
-
-    result = frappe.db.sql(query, tuple(values), as_dict=True)
-    return result
-
-
-def calculate_party_balances(party_info, from_date, to_date):
-    """Calculate all balances for a party"""
-    party_type = party_info.get("party_type")
-    party = party_info.get("party")
-
-    currency = get_party_currency(party_type, party)
-
-    opening = calculate_opening_balance(party_type, party, from_date)
-    period = calculate_period_balance(party_type, party, from_date, to_date)
-
-    opening_net = flt(opening['credit'] - opening['debit'], 2)
-    period_net = flt(period['credit'] - period['debit'], 2)
-    final_net = flt(opening_net + period_net, 2)
-
-    return {
-        "party_type": party_type,
-        "party": party,
-        "currency": currency,
-        "akt_sverka_link": "Акт Сверка",
-        "opening_credit_usd": opening_net if opening_net > 0 else 0,
-        "opening_debit_usd": abs(opening_net) if opening_net < 0 else 0,
-        "period_credit_usd": flt(period['credit'], 2),
-        "period_debit_usd": flt(period['debit'], 2),
-        "final_credit_usd": final_net if final_net > 0 else 0,
-        "final_debit_usd": abs(final_net) if final_net < 0 else 0,
-    }
-
-
-def get_party_currency(party_type, party):
-    """Get party currency from GL Entry (most recent transaction currency)"""
-    currency = frappe.db.sql("""
-        SELECT account_currency
-        FROM `tabGL Entry`
-        WHERE party_type = %s AND party = %s AND is_cancelled = 0
-        ORDER BY posting_date DESC, creation DESC
-        LIMIT 1
-    """, (party_type, party))
-    return currency[0][0] if currency else "USD"
-
-
-def calculate_opening_balance(party_type, party, from_date):
-    """Calculate opening balance before from_date — all GL entries for the party"""
-    result = frappe.db.sql("""
-        SELECT
-            IFNULL(SUM(credit_in_account_currency), 0) as credit,
-            IFNULL(SUM(debit_in_account_currency), 0) as debit
-        FROM `tabGL Entry`
-        WHERE posting_date < %s
-          AND party_type = %s
-          AND party = %s
-          AND is_cancelled = 0
-    """, (from_date, party_type, party), as_dict=True)[0]
-
-    return {"credit": flt(result.credit, 2), "debit": flt(result.debit, 2)}
-
-
-def calculate_period_balance(party_type, party, from_date, to_date):
-    """Calculate period balance from from_date to to_date — all GL entries for the party"""
-    result = frappe.db.sql("""
-        SELECT
-            IFNULL(SUM(credit_in_account_currency), 0) as credit,
-            IFNULL(SUM(debit_in_account_currency), 0) as debit
-        FROM `tabGL Entry`
-        WHERE posting_date >= %s
-          AND posting_date <= %s
-          AND party_type = %s
-          AND party = %s
-          AND is_cancelled = 0
-    """, (from_date, to_date, party_type, party), as_dict=True)[0]
-
-    return {"credit": flt(result.credit, 2), "debit": flt(result.debit, 2)}
