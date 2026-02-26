@@ -51,8 +51,8 @@ def get_main_kpis(from_date=None, to_date=None):
 	customer_receipts = get_cash_flow_income(from_date, to_date)
 	prev_receipts = get_cash_flow_income(prev_from_date, prev_to_date)
 
-	customer_debt = get_customer_outstanding()
-	supplier_debt = get_supplier_outstanding()
+	customer_debt = get_customer_outstanding(from_date, to_date)
+	supplier_debt = get_supplier_outstanding(from_date, to_date)
 	cash_balance = get_cash_balance()
 
 	current_assets = get_current_assets()

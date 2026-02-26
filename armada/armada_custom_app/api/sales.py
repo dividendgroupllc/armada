@@ -188,28 +188,33 @@ def get_sales_dynamics(item_names=None, item_groups=None, customers=None):
 	i_names = _parse_json_list(item_names)
 	i_groups = _parse_json_list(item_groups)
 	custs = _parse_json_list(customers)
-	has_filters = bool(i_names or i_groups or custs)
 
 	year = datetime.now().year
-	labels = []
-	values = []
+	fd = f"{year}-01-01"
+	td = f"{year}-12-31"
 
 	month_names = [
 		'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
 		'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 	]
 
-	for month in range(1, 13):
-		fd = f"{year}-{month:02d}-01"
-		last_day = calendar.monthrange(year, month)[1]
-		td = f"{year}-{month:02d}-{last_day}"
+	joins, where, fparams = _build_item_filter_sql(i_names, i_groups, custs)
 
-		labels.append(month_names[month - 1])
-		if has_filters:
-			vals = _get_filtered_sales_summary(fd, td, i_names, i_groups, custs)
-			values.append(flt(vals.get("amount", 0), 2))
-		else:
-			values.append(flt(get_total_sales(fd, td), 2))
+	rows = frappe.db.sql("""
+		SELECT MONTH(si.posting_date) AS m, SUM(sii.amount) AS amount
+		FROM `tabSales Invoice Item` sii
+		INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+		{joins}
+		WHERE si.docstatus = 1 AND si.posting_date BETWEEN %s AND %s
+		{where}
+		GROUP BY MONTH(si.posting_date)
+	""".format(joins=joins, where=where),
+		[fd, td] + fparams, as_dict=True)
+
+	month_map = {r.m: flt(r.amount, 2) for r in rows}
+
+	labels = month_names[:]
+	values = [month_map.get(m, 0) for m in range(1, 13)]
 
 	return {"labels": labels, "values": values}
 
@@ -299,6 +304,7 @@ def get_sales_data(from_date=None, to_date=None,
 		WHERE si.docstatus = 1 AND si.posting_date BETWEEN %s AND %s
 		{where}
 		ORDER BY si.posting_date DESC, si.name DESC
+		LIMIT 500
 	""".format(joins=joins, where=where),
 		[from_date, to_date] + fparams, as_dict=True)
 

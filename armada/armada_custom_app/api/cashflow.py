@@ -179,8 +179,6 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 			"current_cash": get_cash_balance(),
 			"current_transfer": get_transfer_balance(),
 		}
-		print("KPI DATA: filtered")
-		print(data)
 		return data
 
 	cash_income = get_cash_income_by_method(from_date, to_date, "Наличные")
@@ -208,8 +206,6 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 		"current_cash": get_cash_balance(),
 		"current_transfer": get_transfer_balance(),
 	}
-	print("KPI DATA: not filtered")
-	print(data)
 
 	return data
 
@@ -281,7 +277,6 @@ def get_income_expense_data(from_date=None, to_date=None,
 			income.append(flt(get_cash_flow_income(ds, ds), 2))
 			expense.append(flt(get_cash_flow_expense(ds, ds), 2))
 			cur += timedelta(days=1)
-	print("BAR CHART DATA:", labels, income, expense)
 
 	return {
 		"labels": labels,
@@ -323,23 +318,23 @@ def get_income_ranking(from_date=None, to_date=None,
 			return _income_ranking_fallback(from_date, to_date)
 		return []
 
-	result = []
-	for row in data:
-		prev = frappe.db.sql("""
-			SELECT SUM(paid_amount) FROM `tabPayment Entry`
-			WHERE docstatus = 1 AND payment_type = 'Receive'
-				AND party = %s AND posting_date BETWEEN %s AND %s
-		""", (row.party, prev_from_date, prev_to_date))
-		prev_val = flt(prev[0][0]) if prev and prev[0][0] else 0
+	parties = [r.party for r in data]
+	placeholders = ", ".join(["%s"] * len(parties))
+	prev_rows = frappe.db.sql("""
+		SELECT pe.party, SUM(pe.paid_amount) AS amount
+		FROM `tabPayment Entry` pe
+		WHERE pe.docstatus = 1 AND pe.payment_type = 'Receive'
+			AND pe.posting_date BETWEEN %s AND %s
+			AND pe.party IN ({0})
+		GROUP BY pe.party
+	""".format(placeholders), [prev_from_date, prev_to_date] + parties, as_dict=True)
+	prev_map = {r.party: flt(r.amount) for r in prev_rows}
 
-		result.append({
-			"party": row.party,
-			"amount": flt(row.amount, 2),
-			"change": flt(calculate_change(row.amount, prev_val), 1),
-		})
-	print("INCOME RANKING DATA:", result)
-
-	return result
+	return [{
+		"party": row.party,
+		"amount": flt(row.amount, 2),
+		"change": flt(calculate_change(row.amount, prev_map.get(row.party, 0)), 1),
+	} for row in data]
 
 
 # ── Рейтинг расходов (table) ────────────────────────────────────────────────
@@ -375,23 +370,23 @@ def get_expense_ranking(from_date=None, to_date=None,
 			return _expense_ranking_fallback(from_date, to_date)
 		return []
 
-	result = []
-	for row in data:
-		prev = frappe.db.sql("""
-			SELECT SUM(paid_amount) FROM `tabPayment Entry`
-			WHERE docstatus = 1 AND payment_type = 'Pay'
-				AND party = %s AND posting_date BETWEEN %s AND %s
-		""", (row.party, prev_from_date, prev_to_date))
-		prev_val = flt(prev[0][0]) if prev and prev[0][0] else 0
+	parties = [r.party for r in data]
+	placeholders = ", ".join(["%s"] * len(parties))
+	prev_rows = frappe.db.sql("""
+		SELECT pe.party, SUM(pe.paid_amount) AS amount
+		FROM `tabPayment Entry` pe
+		WHERE pe.docstatus = 1 AND pe.payment_type = 'Pay'
+			AND pe.posting_date BETWEEN %s AND %s
+			AND pe.party IN ({0})
+		GROUP BY pe.party
+	""".format(placeholders), [prev_from_date, prev_to_date] + parties, as_dict=True)
+	prev_map = {r.party: flt(r.amount) for r in prev_rows}
 
-		result.append({
-			"category": row.party or "Без категории",
-			"amount": flt(row.amount, 2),
-			"change": flt(calculate_change(row.amount, prev_val), 1),
-		})
-	print("EXPENSE RANKING DATA:", result)
-
-	return result
+	return [{
+		"category": row.party or "Без категории",
+		"amount": flt(row.amount, 2),
+		"change": flt(calculate_change(row.amount, prev_map.get(row.party, 0)), 1),
+	} for row in data]
 
 
 # ── Данные по обороту (detail table) ────────────────────────────────────────
@@ -418,11 +413,11 @@ def get_cashflow_data(from_date=None, to_date=None,
 			AND pe.posting_date BETWEEN %s AND %s
 			{where}
 		ORDER BY pe.posting_date DESC, pe.name DESC
+		LIMIT 500
 	""".format(where=where),
 		[from_date, to_date] + fparams, as_dict=True)
 
 	flow_type_map = {"Receive": "Приход", "Pay": "Расход", "Internal Transfer": "Перевод"}
-	print(data)
 
 	return [{
 		"date": r.date.strftime("%d.%m.%Y") if r.date else "",

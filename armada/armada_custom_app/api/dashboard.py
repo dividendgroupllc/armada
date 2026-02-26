@@ -54,6 +54,14 @@ from armada.armada_custom_app.api.counterparties import ( # noqa: F401
 	get_supplier_debts,
 )
 
+# ── СКЛАД ──────────────────────────────────────────────────────────────────────────
+from armada.armada_custom_app.api.warehouse import (  # noqa: F401
+	get_warehouse_filter_options,
+	get_warehouse_kpis,
+	get_warehouse_summary,
+	get_warehouse_stock_data,
+)
+
 # ── БАЛАНС ──────────────────────────────────────────────────────────────────────────
 import frappe
 from frappe.utils import flt

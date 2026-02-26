@@ -122,7 +122,7 @@ def get_cash_flow_income(from_date, to_date):
 	"""Total income (Receive) for a period from Payment Entry."""
 	result = frappe.db.sql("""
 		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Receive'
+		WHERE docstatus = 1 AND payment_type = 'Receive' AND party_type = 'Customer'
 			AND posting_date BETWEEN %s AND %s
 	""", (from_date, to_date))
 
@@ -166,15 +166,25 @@ def get_cash_expense_by_method(from_date, to_date, payment_method):
 
 # ── Dynamic Debt Calculation (uses cache from counterparties.py) ────────────
 
-def get_customer_outstanding():
-	"""Total customer outstanding — reads from counterparty cache."""
+def get_customer_outstanding(from_date=None, to_date=None):
+	"""Total customer outstanding — reads from counterparty cache or calculates for period."""
+	if from_date and to_date:
+		from armada.armada_custom_app.api.counterparties import _calc_customer_debts
+		data = _calc_customer_debts(from_date, to_date)
+		return flt(sum(flt(r["debt_amount"]) for r in data), 2)
+	
 	from armada.armada_custom_app.api.counterparties import _get_customer_debts_cached
 	data = _get_customer_debts_cached()
 	return flt(sum(flt(r["amount"]) for r in data), 2)
 
 
-def get_supplier_outstanding():
-	"""Total supplier outstanding — reads from counterparty cache."""
+def get_supplier_outstanding(from_date=None, to_date=None):
+	"""Total supplier outstanding — reads from counterparty cache or calculates for period."""
+	if from_date and to_date:
+		from armada.armada_custom_app.api.counterparties import _calc_supplier_debts
+		data = _calc_supplier_debts(from_date, to_date)
+		return flt(sum(flt(r["debt_amount"]) for r in data), 2)
+		
 	from armada.armada_custom_app.api.counterparties import _get_supplier_debts_cached
 	data = _get_supplier_debts_cached()
 	return flt(sum(flt(r["amount"]) for r in data), 2)
