@@ -386,7 +386,6 @@ body[data-route="armada-dashboard"] .container.page-body {
     display: flex;
     min-height: 100vh;
     width: 100%;
-    max-width: 100%;
     margin: 0;
     padding: 0;
     background: var(--bg-page);
@@ -394,6 +393,11 @@ body[data-route="armada-dashboard"] .container.page-body {
     color: var(--color-primary);
     position: relative;
     overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+.armada-dashboard-container * {
+    box-sizing: border-box;
 }
 
 .armada-sidebar {
@@ -493,20 +497,19 @@ body[data-route="armada-dashboard"] .container.page-body {
 }
 
 .armada-main-content {
-    flex: 1;
     margin-left: var(--sidebar-width);
     padding: var(--space-3xl) var(--space-3xl) var(--space-4xl);
     background: var(--bg-page);
     min-height: 100vh;
     transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    width: calc(100vw - var(--sidebar-width));
-    max-width: calc(100vw - var(--sidebar-width));
+    box-sizing: border-box;
+    width: calc(100% - var(--sidebar-width));
+    overflow-x: hidden;
 }
 
 .armada-main-content.expanded {
     margin-left: var(--sidebar-collapsed);
-    width: calc(100vw - var(--sidebar-collapsed));
-    max-width: calc(100vw - var(--sidebar-collapsed));
+    width: calc(100% - var(--sidebar-collapsed));
 }
 
 .armada-header {
@@ -763,6 +766,7 @@ body[data-route="armada-dashboard"] .container.page-body {
 .debt-table-wrapper {
     max-height: 420px;
     overflow-y: auto;
+    overflow-x: auto;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--bg-card);
@@ -970,9 +974,9 @@ td.highlight-red {
     }
     .armada-main-content {
         margin-left: var(--sidebar-collapsed);
-        width: calc(100vw - var(--sidebar-collapsed));
-        max-width: calc(100vw - var(--sidebar-collapsed));
+        width: calc(100% - var(--sidebar-collapsed));
         padding: var(--space-2xl);
+        overflow-x: hidden;
     }
 }
 
@@ -984,9 +988,9 @@ td.highlight-red {
     }
     .armada-main-content {
         margin-left: 0;
-        width: 100vw;
-        max-width: 100vw;
+        width: 100%;
         padding: var(--space-lg);
+        overflow-x: hidden;
     }
     .kpi-cards-row {
         grid-template-columns: 1fr;
@@ -1187,7 +1191,7 @@ td.highlight-red {
 .scrollable-card .debt-table-wrapper {
     flex: 1;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
     max-height: none;
     border-radius: var(--radius-md);
 }
@@ -1350,6 +1354,26 @@ td.highlight-red {
     flex: 1;
     font-weight: 600;
     color: var(--color-accent-blue, #00d4ff);
+}
+
+.multi-select-toggle .ms-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: transparent;
+    color: #00d4ff;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-left: 6px;
+    transition: background 0.2s ease;
+    white-space: nowrap;
+}
+
+.multi-select-toggle .ms-clear:hover {
+    background: rgba(0, 212, 255, 0.12);
 }
 
 .multi-select-toggle i {

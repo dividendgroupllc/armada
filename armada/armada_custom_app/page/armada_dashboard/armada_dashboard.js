@@ -38,13 +38,19 @@ class ArmadaDashboard {
 			from_date: frappe.datetime.month_start(),
 			to_date: frappe.datetime.get_today()
 		};
-		
+
+		// Cached filter options (loaded once at startup)
+		this._sales_filter_options = null;
+		this._cashflow_filter_options = null;
+		this._warehouse_filter_options = null;
+
 		this.init();
 	}
 
 	init() {
 		this.render_layout();
 		this.setup_events();
+		this._preload_filter_options();
 		this.load_page('main');
 	}
 
@@ -54,14 +60,16 @@ class ArmadaDashboard {
 	}
 
 	init_theme() {
-		const savedTheme = localStorage.getItem('armada_theme') || 'light';
+		const savedTheme = localStorage.getItem('armada_theme') || 'dark';
 		if (savedTheme === 'dark') {
 			this.wrapper.find('.armada-dashboard-container').addClass('dark-mode');
 			$('body').addClass('armada-dark-mode-active');
 			this.wrapper.find('#theme-icon').removeClass('fa-moon-o').addClass('fa-sun-o');
 			this.is_dark_mode = true;
 		} else {
+			this.wrapper.find('.armada-dashboard-container').removeClass('dark-mode');
 			$('body').removeClass('armada-dark-mode-active');
+			this.wrapper.find('#theme-icon').removeClass('fa-sun-o').addClass('fa-moon-o');
 			this.is_dark_mode = false;
 		}
 	}
@@ -127,10 +135,13 @@ class ArmadaDashboard {
 			me.apply_page_date_range('cashflow');
 		});
 
-		// Close dropdown on outside click
+		// Close dropdowns on outside click
 		$(document).on('click', function(e) {
 			if (!$(e.target).closest('.date-range-item').length) {
 				$('.date-range-dropdown').removeClass('show');
+			}
+			if (!$(e.target).closest('.multi-select-wrapper').length) {
+				$('.multi-select-dropdown').removeClass('show');
 			}
 		});
 	}
@@ -139,6 +150,70 @@ class ArmadaDashboard {
 		if (page === 'sales') return this.sales_filters;
 		if (page === 'cashflow') return this.cashflow_filters;
 		return this.main_filters;
+	}
+
+	_preload_filter_options() {
+		let me = this;
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_sales_filter_options',
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me._sales_filter_options = r.message;
+					if (me.current_page === 'sales') {
+						me._apply_sales_filter_options();
+					}
+				}
+			}
+		});
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_cashflow_filter_options',
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me._cashflow_filter_options = r.message;
+					if (me.current_page === 'cashflow') {
+						me._apply_cashflow_filter_options();
+					}
+				}
+			}
+		});
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_warehouse_filter_options',
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me._warehouse_filter_options = r.message;
+					if (me.current_page === 'warehouse') {
+						me._apply_warehouse_filter_options();
+					}
+				}
+			}
+		});
+	}
+
+	_apply_sales_filter_options() {
+		if (this._sales_filter_options) {
+			this._populate_multi_select('item_names', this._sales_filter_options.item_names || []);
+			this._populate_multi_select('item_groups', this._sales_filter_options.item_groups || []);
+			this._populate_multi_select('customers', this._sales_filter_options.customers || []);
+		}
+	}
+
+	_apply_cashflow_filter_options() {
+		if (this._cashflow_filter_options) {
+			this._populate_multi_select('cf_payment_modes', this._cashflow_filter_options.payment_modes || []);
+			this._populate_multi_select('cf_categories', this._cashflow_filter_options.categories || []);
+			this._populate_multi_select('cf_counterparties', this._cashflow_filter_options.counterparties || []);
+		}
+	}
+
+	_apply_warehouse_filter_options() {
+		if (this._warehouse_filter_options) {
+			this._populate_multi_select('wh_warehouses', this._warehouse_filter_options.warehouses || []);
+			this._populate_multi_select('wh_item_groups', this._warehouse_filter_options.item_groups || []);
+			this._populate_multi_select('wh_items', this._warehouse_filter_options.items || []);
+		}
 	}
 
 	init_page_date_range(page) {
@@ -202,6 +277,9 @@ class ArmadaDashboard {
 				break;
 			case 'counterparties':
 				this.render_counterparties_page();
+				break;
+			case 'warehouse':
+				this.render_warehouse_page();
 				break;
 		}
 	}
@@ -391,7 +469,7 @@ class ArmadaDashboard {
 						ticks: { 
 							color: colors.textColor,
 							callback: function(value) {
-								return '$' + (value / 1000) + 'K';
+								return '$' + Number(value / 1000).toLocaleString('ru-RU') + 'K';
 							}
 						}
 					}
@@ -439,7 +517,7 @@ class ArmadaDashboard {
 						ticks: { 
 							color: colors.textColor,
 							callback: function(value) {
-								return '$' + (value / 1000) + 'K';
+								return '$' + Number(value / 1000).toLocaleString('ru-RU') + 'K';
 							}
 						}
 					}
@@ -505,6 +583,7 @@ class ArmadaDashboard {
 						<div class="multi-select-toggle dark-select">
 							<span class="ms-placeholder">Список наименований продуктов</span>
 							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
 							<i class="fa fa-chevron-down"></i>
 						</div>
 						<div class="multi-select-dropdown">
@@ -516,6 +595,7 @@ class ArmadaDashboard {
 						<div class="multi-select-toggle dark-select">
 							<span class="ms-placeholder">Типаж</span>
 							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
 							<i class="fa fa-chevron-down"></i>
 						</div>
 						<div class="multi-select-dropdown">
@@ -527,6 +607,7 @@ class ArmadaDashboard {
 						<div class="multi-select-toggle dark-select">
 							<span class="ms-placeholder">Список контрагентов</span>
 							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
 							<i class="fa fa-chevron-down"></i>
 						</div>
 						<div class="multi-select-dropdown">
@@ -609,21 +690,22 @@ class ArmadaDashboard {
 		
 		$('#page-content').html(content);
 		this.init_page_date_range('sales');
-		this.setup_multi_select_events();
-		this.load_sales_filter_options();
+		this._apply_sales_filter_options();
+		this._bind_filter_events('sales');
 		this.load_sales_data();
 	}
 
 	/* ── Multi-select filter helpers ──────────────────────────────── */
 
-	setup_multi_select_events() {
+	_bind_filter_events(page) {
 		let me = this;
+		const filterBar = this.wrapper.find('.dark-filter-bar');
+		if (!filterBar.length) return;
 
-		// Toggle dropdown on click
-		this.wrapper.on('click', '.multi-select-toggle', function(e) {
+		// Toggle dropdown
+		filterBar.on('click', '.multi-select-toggle', function(e) {
 			e.stopPropagation();
 			const dropdown = $(this).siblings('.multi-select-dropdown');
-			// Close other open dropdowns
 			$('.multi-select-dropdown').not(dropdown).removeClass('show');
 			dropdown.toggleClass('show');
 			if (dropdown.hasClass('show')) {
@@ -632,7 +714,7 @@ class ArmadaDashboard {
 		});
 
 		// Search within dropdown
-		this.wrapper.on('input', '.ms-search', function() {
+		filterBar.on('input', '.ms-search', function() {
 			const query = $(this).val().toLowerCase();
 			$(this).siblings('.ms-options').find('.ms-option').each(function() {
 				const text = $(this).find('.ms-label').text().toLowerCase();
@@ -640,28 +722,37 @@ class ArmadaDashboard {
 			});
 		});
 
-		// Checkbox change
-		this.wrapper.on('change', '.ms-option input[type="checkbox"]', function() {
+		// Checkbox change → reload data for THIS page only
+		filterBar.on('change', '.ms-option input[type="checkbox"]', function() {
 			const wrapper = $(this).closest('.multi-select-wrapper');
 			me._update_multi_select_display(wrapper);
-			// Reload the current page's data
-			if (me.current_page === 'sales') {
+			if (page === 'sales') {
 				me.load_sales_data();
-			} else if (me.current_page === 'cashflow') {
+			} else if (page === 'cashflow') {
 				me.load_cashflow_data();
-			}
-		});
-
-		// Close dropdowns on outside click
-		$(document).on('click', function(e) {
-			if (!$(e.target).closest('.multi-select-wrapper').length) {
-				$('.multi-select-dropdown').removeClass('show');
+			} else if (page === 'warehouse') {
+				me.load_warehouse_data();
 			}
 		});
 
 		// Prevent dropdown close when clicking inside
-		this.wrapper.on('click', '.multi-select-dropdown', function(e) {
+		filterBar.on('click', '.multi-select-dropdown', function(e) {
 			e.stopPropagation();
+		});
+
+		// Clear button — uncheck all and reload
+		filterBar.on('click', '.ms-clear', function(e) {
+			e.stopPropagation();
+			const wrapper = $(this).closest('.multi-select-wrapper');
+			wrapper.find('.ms-option input[type="checkbox"]').prop('checked', false);
+			me._update_multi_select_display(wrapper);
+			if (page === 'sales') {
+				me.load_sales_data();
+			} else if (page === 'cashflow') {
+				me.load_cashflow_data();
+			} else if (page === 'warehouse') {
+				me.load_warehouse_data();
+			}
 		});
 	}
 
@@ -669,12 +760,15 @@ class ArmadaDashboard {
 		const checked = wrapper.find('.ms-option input:checked');
 		const placeholder = wrapper.find('.ms-placeholder');
 		const count = wrapper.find('.ms-count');
+		const clear = wrapper.find('.ms-clear');
 		if (checked.length > 0) {
 			placeholder.hide();
 			count.text(checked.length + ' выбрано').show();
+			clear.show();
 		} else {
 			placeholder.show();
 			count.hide();
+			clear.hide();
 		}
 	}
 
@@ -686,20 +780,6 @@ class ArmadaDashboard {
 			values.push($(this).val());
 		});
 		return values;
-	}
-
-	load_sales_filter_options() {
-		let me = this;
-		frappe.call({
-			method: 'armada.armada_custom_app.api.dashboard.get_sales_filter_options',
-			callback: function(r) {
-				if (r.message) {
-					me._populate_multi_select('item_names', r.message.item_names || []);
-					me._populate_multi_select('item_groups', r.message.item_groups || []);
-					me._populate_multi_select('customers', r.message.customers || []);
-				}
-			}
-		});
 	}
 
 	_populate_multi_select(filterName, options) {
@@ -736,6 +816,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.update_sales_kpis(r.message);
@@ -747,6 +828,7 @@ class ArmadaDashboard {
 		frappe.call({
 			method: 'armada.armada_custom_app.api.dashboard.get_sales_dynamics',
 			args: Object.assign({}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_sales_dynamics_chart(r.message);
@@ -761,6 +843,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_product_ranking(r.message);
@@ -775,6 +858,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_sales_data_table(r.message);
@@ -826,7 +910,7 @@ class ArmadaDashboard {
 						ticks: { 
 							color: colors.textColor,
 							callback: function(value) {
-								return '$' + (value / 1000) + 'K';
+								return '$' + Number(value / 1000).toLocaleString('ru-RU') + 'K';
 							}
 						}
 					}
@@ -927,6 +1011,7 @@ class ArmadaDashboard {
 						<div class="multi-select-toggle dark-select">
 							<span class="ms-placeholder">Тип расчёта</span>
 							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
 							<i class="fa fa-chevron-down"></i>
 						</div>
 						<div class="multi-select-dropdown">
@@ -937,6 +1022,7 @@ class ArmadaDashboard {
 						<div class="multi-select-toggle dark-select">
 							<span class="ms-placeholder">Список категории</span>
 							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
 							<i class="fa fa-chevron-down"></i>
 						</div>
 						<div class="multi-select-dropdown">
@@ -948,6 +1034,7 @@ class ArmadaDashboard {
 						<div class="multi-select-toggle dark-select">
 							<span class="ms-placeholder">Список контрагентов</span>
 							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
 							<i class="fa fa-chevron-down"></i>
 						</div>
 						<div class="multi-select-dropdown">
@@ -1039,23 +1126,9 @@ class ArmadaDashboard {
 		
 		$('#page-content').html(content);
 		this.init_page_date_range('cashflow');
-		this.setup_multi_select_events();
-		this.load_cashflow_filter_options();
+		this._apply_cashflow_filter_options();
+		this._bind_filter_events('cashflow');
 		this.load_cashflow_data();
-	}
-
-	load_cashflow_filter_options() {
-		let me = this;
-		frappe.call({
-			method: 'armada.armada_custom_app.api.dashboard.get_cashflow_filter_options',
-			callback: function(r) {
-				if (r.message) {
-					me._populate_multi_select('cf_payment_modes', r.message.payment_modes || []);
-					me._populate_multi_select('cf_categories', r.message.categories || []);
-					me._populate_multi_select('cf_counterparties', r.message.counterparties || []);
-				}
-			}
-		});
 	}
 
 	load_cashflow_data() {
@@ -1077,6 +1150,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.update_cashflow_kpis(r.message);
@@ -1091,6 +1165,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_income_expense_chart(r.message);
@@ -1105,6 +1180,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_income_ranking(r.message);
@@ -1119,6 +1195,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_expense_ranking(r.message);
@@ -1133,6 +1210,7 @@ class ArmadaDashboard {
 				from_date: filters.from_date,
 				to_date: filters.to_date
 			}, filter_args),
+			freeze: false,
 			callback: function(r) {
 				if (r.message) {
 					me.render_turnover_summary(r.message);
@@ -1191,7 +1269,7 @@ class ArmadaDashboard {
 						ticks: { 
 							color: colors.textColor,
 							callback: function(value) {
-								return (value / 1000) + 'K';
+								return Number(value / 1000).toLocaleString('ru-RU') + 'K';
 							}
 						}
 					}
@@ -1510,9 +1588,254 @@ class ArmadaDashboard {
 		$('#supplier-debt-table').html(html);
 	}
 
+	// ==================== WAREHOUSE (СКЛАД) PAGE ====================
+	render_warehouse_page() {
+		$('#page-title').text('ОСТАТКИ НА СКЛАДАХ');
+
+		let content = `
+			<div class="warehouse-page">
+				<!-- Dark Filter Bar -->
+				<div class="dark-filter-bar">
+					<div class="filter-item multi-select-wrapper" data-filter="wh_warehouses">
+						<div class="multi-select-toggle dark-select">
+							<span class="ms-placeholder">Склад</span>
+							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="multi-select-dropdown">
+							<input type="text" class="ms-search" placeholder="Поиск...">
+							<div class="ms-options"></div>
+						</div>
+					</div>
+					<div class="filter-item multi-select-wrapper" data-filter="wh_item_groups">
+						<div class="multi-select-toggle dark-select">
+							<span class="ms-placeholder">Тип товара</span>
+							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="multi-select-dropdown">
+							<div class="ms-options"></div>
+						</div>
+					</div>
+					<div class="filter-item multi-select-wrapper" data-filter="wh_items">
+						<div class="multi-select-toggle dark-select">
+							<span class="ms-placeholder">Наименование товара</span>
+							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="multi-select-dropdown">
+							<input type="text" class="ms-search" placeholder="Поиск...">
+							<div class="ms-options"></div>
+						</div>
+					</div>
+				</div>
+
+				<!-- KPI Cards -->
+				<div class="kpi-cards-row">
+					<div class="kpi-card">
+						<div class="kpi-label">Общее кол-во</div>
+						<div class="kpi-value" id="wh-total-qty">0</div>
+					</div>
+					<div class="kpi-card">
+						<div class="kpi-label">Общая стоимость</div>
+						<div class="kpi-value" id="wh-total-value">$0</div>
+					</div>
+					<div class="kpi-card">
+						<div class="kpi-label">Кол-во складов</div>
+						<div class="kpi-value" id="wh-warehouse-count">0</div>
+					</div>
+					<div class="kpi-card">
+						<div class="kpi-label">Кол-во наименований</div>
+						<div class="kpi-value" id="wh-item-count">0</div>
+					</div>
+				</div>
+
+				<!-- Tables Row -->
+				<div class="charts-row two-columns">
+					<div class="chart-container scrollable-card">
+						<div class="chart-title">ОСТАТОК ПО СКЛАДАМ</div>
+						<div class="ranking-table-wrapper" id="warehouse-summary-table">
+							<!-- Table will be rendered here -->
+						</div>
+					</div>
+					<div class="chart-container scrollable-card">
+						<div class="chart-title">ДЕТАЛЬНЫЕ ДАННЫЕ ПО СКЛАДУ</div>
+						<div class="data-table-wrapper" id="warehouse-stock-table">
+							<!-- Table will be rendered here -->
+						</div>
+					</div>
+				</div>
+			</div>
+		`;
+
+		$('#page-content').html(content);
+		this._apply_warehouse_filter_options();
+		this._bind_filter_events('warehouse');
+		this.load_warehouse_data();
+	}
+
+	load_warehouse_data() {
+		let me = this;
+		const warehouses = this._get_multi_select_values('wh_warehouses');
+		const item_groups = this._get_multi_select_values('wh_item_groups');
+		const items = this._get_multi_select_values('wh_items');
+
+		const filter_args = {};
+		if (warehouses.length) filter_args.warehouses = JSON.stringify(warehouses);
+		if (item_groups.length) filter_args.item_groups = JSON.stringify(item_groups);
+		if (items.length) filter_args.items = JSON.stringify(items);
+
+		// Load warehouse KPIs
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_warehouse_kpis',
+			args: filter_args,
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me.update_warehouse_kpis(r.message);
+				}
+			}
+		});
+
+		// Load warehouse summary
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_warehouse_summary',
+			args: filter_args,
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me.render_warehouse_summary(r.message);
+				}
+			}
+		});
+
+		// Load detailed stock data
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_warehouse_stock_data',
+			args: filter_args,
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me.render_warehouse_stock_table(r.message);
+				}
+			}
+		});
+	}
+
+	update_warehouse_kpis(data) {
+		$('#wh-total-qty').text(Number(data.total_qty || 0).toLocaleString('ru-RU'));
+		$('#wh-total-value').text(this.format_currency(data.total_value || 0));
+		$('#wh-warehouse-count').text(data.warehouse_count || 0);
+		$('#wh-item-count').text(data.item_count || 0);
+	}
+
+	render_warehouse_summary(data) {
+		if (!data.length) {
+			$('#warehouse-summary-table').html('<p style="color:#94a3b8;text-align:center;padding:20px;">Нет данных</p>');
+			return;
+		}
+
+		let maxValue = Math.max(...data.map(r => r.total_value));
+		let totalQty = data.reduce((sum, r) => sum + r.total_qty, 0);
+		let totalValue = data.reduce((sum, r) => sum + r.total_value, 0);
+
+		let html = `
+			<table class="ranking-table compact">
+				<thead>
+					<tr>
+						<th></th>
+						<th>Склад</th>
+						<th>Кол-во</th>
+						<th>Стоимость</th>
+						<th>Наименований</th>
+					</tr>
+				</thead>
+				<tbody>
+		`;
+
+		data.forEach((row, index) => {
+			const barWidth = maxValue > 0 ? (row.total_value / maxValue) * 100 : 0;
+			html += `
+				<tr>
+					<td>${index + 1}.</td>
+					<td>${row.warehouse}</td>
+					<td>${Number(row.total_qty).toLocaleString('ru-RU')}</td>
+					<td>
+						${this.format_currency(row.total_value)}
+						<div class="bar-container small">
+							<div class="bar income" style="width: ${barWidth}%"></div>
+						</div>
+					</td>
+					<td>${row.item_count}</td>
+				</tr>
+			`;
+		});
+
+		html += `
+				</tbody>
+				<tfoot>
+					<tr>
+						<td></td>
+						<td><strong>Итого</strong></td>
+						<td><strong>${Number(totalQty).toLocaleString('ru-RU')}</strong></td>
+						<td><strong>${this.format_currency(totalValue)}</strong></td>
+						<td></td>
+					</tr>
+				</tfoot>
+			</table>
+		`;
+
+		$('#warehouse-summary-table').html(html);
+	}
+
+	render_warehouse_stock_table(data) {
+		if (!data.length) {
+			$('#warehouse-stock-table').html('<p style="color:#94a3b8;text-align:center;padding:20px;">Нет данных</p>');
+			return;
+		}
+
+		let html = `
+			<table class="data-table small">
+				<thead>
+					<tr>
+						<th>Наименование</th>
+						<th>Тип</th>
+						<th>Склад</th>
+						<th>Кол-во</th>
+						<th>Цена</th>
+						<th>Стоимость</th>
+					</tr>
+				</thead>
+				<tbody>
+		`;
+
+		data.forEach(row => {
+			html += `
+				<tr>
+					<td>${row.item_name}</td>
+					<td>${row.item_group}</td>
+					<td>${row.warehouse}</td>
+					<td>${Number(row.actual_qty).toLocaleString('ru-RU')}</td>
+					<td>${this.format_currency(row.valuation_rate)}</td>
+					<td>${this.format_currency(row.stock_value)}</td>
+				</tr>
+			`;
+		});
+
+		html += `
+				</tbody>
+			</table>
+		`;
+
+		$('#warehouse-stock-table').html(html);
+	}
+
 	// ==================== UTILITY METHODS ====================
 	format_currency(value) {
-		return '$' + Number(value).toLocaleString('en-US', {
+		return '$' + Number(value).toLocaleString('ru-RU', {
 			minimumFractionDigits: 0,
 			maximumFractionDigits: 2
 		});

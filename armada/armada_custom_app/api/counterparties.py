@@ -31,7 +31,7 @@ CACHE_TTL = 300  # 5 minutes TTL (safety net if scheduler misses)
 
 # ── Core calculation (GL Entry — ERPNext standard) ──────────────────────────
 
-def _calc_supplier_debts():
+def _calc_supplier_debts(from_date=None, to_date=None):
 	"""
 	Calculate debt for each supplier from GL Entry.
 
@@ -42,7 +42,13 @@ def _calc_supplier_debts():
 	Uses account_type = 'Payable' to automatically pick the right
 	creditor accounts (works regardless of chart-of-accounts naming).
 	"""
-	data = frappe.db.sql("""
+	date_condition = ""
+	params = []
+	if from_date and to_date:
+		date_condition = "AND gle.posting_date BETWEEN %s AND %s"
+		params = [from_date, to_date]
+
+	data = frappe.db.sql(f"""
 		SELECT
 			gle.party                          AS supplier,
 			SUM(gle.credit - gle.debit)        AS debt_amount
@@ -52,15 +58,16 @@ def _calc_supplier_debts():
 			AND gle.party_type   = 'Supplier'
 			AND acc.account_type = 'Payable'
 			AND gle.party IS NOT NULL AND gle.party != ''
+			{date_condition}
 		GROUP BY gle.party
 		HAVING debt_amount != 0
 		ORDER BY debt_amount DESC
-	""", as_dict=True)
+	""", tuple(params), as_dict=True)
 
 	return data or []
 
 
-def _calc_customer_debts():
+def _calc_customer_debts(from_date=None, to_date=None):
 	"""
 	Calculate debt for each customer from GL Entry.
 
@@ -71,7 +78,13 @@ def _calc_customer_debts():
 	Uses account_type = 'Receivable' to automatically pick the right
 	debtor accounts.
 	"""
-	data = frappe.db.sql("""
+	date_condition = ""
+	params = []
+	if from_date and to_date:
+		date_condition = "AND gle.posting_date BETWEEN %s AND %s"
+		params = [from_date, to_date]
+
+	data = frappe.db.sql(f"""
 		SELECT
 			gle.party                          AS customer,
 			SUM(gle.debit - gle.credit)        AS debt_amount
@@ -81,10 +94,11 @@ def _calc_customer_debts():
 			AND gle.party_type   = 'Customer'
 			AND acc.account_type = 'Receivable'
 			AND gle.party IS NOT NULL AND gle.party != ''
+			{date_condition}
 		GROUP BY gle.party
 		HAVING debt_amount != 0
 		ORDER BY debt_amount DESC
-	""", as_dict=True)
+	""", tuple(params), as_dict=True)
 
 	return data or []
 
