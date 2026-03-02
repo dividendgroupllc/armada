@@ -325,12 +325,20 @@ def get_summary_html(data):
         return ""
 
     opening = 0
+    closing = 0
+
+    # Har bir kategoriya uchun IKKI TOMONI ham track qilinadi
     customer_kirim = 0
+    customer_chiqim = 0  # BUG FIX: avval bu yo'q edi
+    supplier_kirim = 0   # BUG FIX: avval bu yo'q edi
     supplier_chiqim = 0
+    expense_kirim = 0
     expense_chiqim = 0
+    dividend_kirim = 0
     dividend_chiqim = 0
     transfer_kirim = 0
     transfer_chiqim = 0
+    employee_kirim = 0
     employee_chiqim = 0
     other_kirim = 0
     other_chiqim = 0
@@ -340,33 +348,41 @@ def get_summary_html(data):
             opening = flt(row.get("balance"))
             continue
         if row.get("is_total"):
+            # Closing = ИТОГО qatoridagi balance (detail bilan har doim mos keladi)
+            closing = flt(row.get("balance"))
             continue
 
-        category = row.get("category", "other")
+        category = row.get("category") or "other"
         kirim = flt(row.get("kirim"))
         chiqim = flt(row.get("chiqim"))
 
         if category == "customer":
             customer_kirim += kirim
+            customer_chiqim += chiqim
         elif category == "supplier":
+            supplier_kirim += kirim
             supplier_chiqim += chiqim
         elif category == "expense":
+            expense_kirim += kirim
             expense_chiqim += chiqim
         elif category == "dividend":
+            dividend_kirim += kirim
             dividend_chiqim += chiqim
         elif category == "transfer":
             transfer_kirim += kirim
             transfer_chiqim += chiqim
         elif category == "employee":
+            employee_kirim += kirim
             employee_chiqim += chiqim
         else:
             other_kirim += kirim
             other_chiqim += chiqim
 
-    closing = opening + customer_kirim + other_kirim + transfer_kirim - supplier_chiqim - expense_chiqim - dividend_chiqim - transfer_chiqim - employee_chiqim - other_chiqim
-
     def fmt(val):
         return f"{flt(val):,.2f}"
+
+    def dash_or_val(val):
+        return "—" if flt(val) == 0 else f"<span style='color: inherit;'>{fmt(val)}</span>"
 
     html = f"""
     <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px;">
@@ -385,38 +401,38 @@ def get_summary_html(data):
                 </tr>
                 <tr>
                     <td style="padding: 10px; border: 1px solid #ddd;">Покупатели</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(customer_kirim)}</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #999;">—</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(customer_kirim) if customer_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(customer_chiqim) if customer_chiqim else '—'}</td>
                 </tr>
                 <tr style="background-color: #fafafa;">
                     <td style="padding: 10px; border: 1px solid #ddd;">Поставщики</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #999;">—</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(supplier_chiqim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(supplier_kirim) if supplier_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(supplier_chiqim) if supplier_chiqim else '—'}</td>
                 </tr>
                 <tr>
                     <td style="padding: 10px; border: 1px solid #ddd;">Расходы</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #999;">—</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(expense_chiqim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(expense_kirim) if expense_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(expense_chiqim) if expense_chiqim else '—'}</td>
                 </tr>
                 <tr style="background-color: #fafafa;">
                     <td style="padding: 10px; border: 1px solid #ddd;">Дивиденды</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #999;">—</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(dividend_chiqim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(dividend_kirim) if dividend_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(dividend_chiqim) if dividend_chiqim else '—'}</td>
                 </tr>
                 <tr>
                     <td style="padding: 10px; border: 1px solid #ddd;">Сотрудники</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #999;">—</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(employee_chiqim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(employee_kirim) if employee_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(employee_chiqim) if employee_chiqim else '—'}</td>
                 </tr>
                 <tr style="background-color: #fafafa;">
                     <td style="padding: 10px; border: 1px solid #ddd;">Перемещения</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(transfer_kirim)}</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(transfer_chiqim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(transfer_kirim) if transfer_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(transfer_chiqim) if transfer_chiqim else '—'}</td>
                 </tr>
                 <tr>
                     <td style="padding: 10px; border: 1px solid #ddd;">Прочие</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(other_kirim)}</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(other_chiqim)}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(other_kirim) if other_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(other_chiqim) if other_chiqim else '—'}</td>
                 </tr>
                 <tr style="background-color: #e3f2fd; font-weight: bold;">
                     <td style="padding: 12px; border: 1px solid #ddd; font-weight: bold;">Конечный остаток</td>
