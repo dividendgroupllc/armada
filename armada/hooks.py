@@ -7,7 +7,17 @@ app_license = "mit"
 
 # Fixtures
 fixtures = [
-    {"dt": "Custom Field", "filters": [["dt", "=", "Stock Entry"], ["fieldname", "=", "custom_production_entry"]]}
+    {"dt": "Custom Field", "filters": [
+        ["dt", "in", ("Stock Entry", "Item")],
+        ["fieldname", "in", (
+            "custom_production_entry",
+            "armada_category_section",
+            "fp_type",
+            "segment",
+            "product_type",
+            "standard"
+        )]
+    ]}
 ]
 
 # Apps
