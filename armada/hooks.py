@@ -8,16 +8,19 @@ app_license = "mit"
 # Fixtures
 fixtures = [
     {"dt": "Custom Field", "filters": [
-        ["dt", "in", ("Stock Entry", "Item")],
+        ["dt", "in", ("Stock Entry", "Item", "Kassa")],
         ["fieldname", "in", (
             "custom_production_entry",
             "armada_category_section",
             "fp_type",
             "segment",
             "product_type",
-            "standard"
+            "standard",
+            "custom_sub_account_name"
         )]
-    ]}
+    ]},
+    "Account Name Mapping",
+    "Account Name Mapping Item"
 ]
 
 # Apps

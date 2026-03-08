@@ -32,6 +32,11 @@ frappe.ui.form.on("Kassa", {
 
         // Update balance label based on transaction type
         frm.trigger("update_balance_label");
+
+        // Update sub-account options on load
+        if (frm.doc.expense_account) {
+            frm.trigger("update_sub_account_options");
+        }
     },
 
     company: function(frm) {
@@ -254,6 +259,54 @@ frappe.ui.form.on("Kassa", {
         } else {
             frm.set_value("party_name", "");
             frm.set_value("party_currency", "");
+        }
+    },
+
+    expense_account: function(frm) {
+        if (frm.doc.expense_account) {
+            frappe.db.get_value("Account", frm.doc.expense_account, "account_name", function(r) {
+                if (r && r.account_name) {
+                    frm.set_value("expense_account_name", r.account_name);
+                }
+            });
+            // Fetch and set sub-account options
+            frm.trigger("update_sub_account_options");
+        } else {
+            frm.set_value("expense_account_name", "");
+            frm.set_df_property("custom_sub_account_name", "options", [""]);
+            frm.set_value("custom_sub_account_name", "");
+        }
+    },
+
+    update_sub_account_options: function(frm) {
+        if (frm.doc.expense_account) {
+            frappe.call({
+                method: "frappe.client.get_value",
+                args: {
+                    doctype: "Account Name Mapping",
+                    filters: { account: frm.doc.expense_account },
+                    fieldname: "name"
+                },
+                callback: function(r) {
+                    if (r.message && r.message.name) {
+                        frappe.model.with_doc("Account Name Mapping", r.message.name, function() {
+                            let mapping_doc = frappe.get_doc("Account Name Mapping", r.message.name);
+                            let options = [""];
+                            if (mapping_doc.mapping_items) {
+                                mapping_doc.mapping_items.forEach(function(item) {
+                                    options.push(item.sub_name);
+                                });
+                            }
+                            frm.set_df_property("custom_sub_account_name", "options", options);
+                            frm.refresh_field("custom_sub_account_name");
+                        });
+                    } else {
+                        frm.set_df_property("custom_sub_account_name", "options", [""]);
+                        frm.refresh_field("custom_sub_account_name");
+                        frm.set_value("custom_sub_account_name", "");
+                    }
+                }
+            });
         }
     },
 

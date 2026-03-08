@@ -1,0 +1,32 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-08 16:50:39.774222",
+  "name": "mcu4u62au1",
+  "parent": "5201 - Administrative Expenses - A",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "sdgsdgs"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-08 16:50:39.774222",
+  "name": "mcun8pdb6k",
+  "parent": "5201 - Administrative Expenses - A",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "sdgsdhgsdghsdhgsdgh"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-08 16:50:39.774222",
+  "name": "mcunhasuer",
+  "parent": "5201 - Administrative Expenses - A",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "sdgdfhdfhdfhdfh"
+ }
+]
