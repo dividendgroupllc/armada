@@ -21,11 +21,23 @@ def format_qty(value):
     return round(flt(value), 2) if value is not None else None
 
 
+def voucher_type_matches(row, base_voucher_type):
+    voucher_type = (row or {}).get("voucher_type") or ""
+    return voucher_type == base_voucher_type or voucher_type.startswith(f"{base_voucher_type} ")
+
+
+def get_voucher_doctype(voucher_type):
+    if not voucher_type or voucher_type in {"Boshlang'ich qoldiq", "Total"}:
+        return ""
+
+    return voucher_type.split(" (", 1)[0]
+
+
 def get_columns():
     return [
         {"label": "Сана", "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
         {"label": "Ҳужжат", "fieldname": "voucher_type", "fieldtype": "Data", "width": 150},
-        {"label": "Ҳужжат №", "fieldname": "voucher_no", "fieldtype": "Dynamic Link", "options": "voucher_type", "width": 120},
+        {"label": "Ҳужжат №", "fieldname": "voucher_no", "fieldtype": "Dynamic Link", "options": "voucher_doctype", "width": 120},
         {"label": "Маҳсулот номи", "fieldname": "item_name", "fieldtype": "Data", "width": 200},
         {"label": "Миқдори", "fieldname": "qty", "fieldtype": "Float", "precision": 2, "width": 80},
         {"label": "Нархи", "fieldname": "rate", "fieldtype": "Currency", "width": 100},
@@ -402,6 +414,7 @@ def finalize_data(data, to_date, party_currency, balance):
         })
 
     for row in data:
+        row['voucher_doctype'] = get_voucher_doctype(row.get('voucher_type'))
         raw_balance = row.pop('balance', None)
         if raw_balance is not None:
             v = flt(raw_balance)
@@ -531,20 +544,32 @@ def get_summary_html(data, filters):
     opening_credit = opening_balance if opening_balance > 0 else 0
     opening_debit = abs(opening_balance) if opening_balance < 0 else 0
 
-    goods_credit = sum(flt(r.get('credit', 0)) for r in data
-                       if r.get('voucher_type') == 'Purchase Invoice')
-    goods_debit = sum(flt(r.get('debit', 0)) for r in data
-                      if r.get('voucher_type') == 'Sales Invoice')
+    goods_credit = sum(
+        flt(r.get('credit', 0)) for r in data
+        if voucher_type_matches(r, 'Purchase Invoice') or voucher_type_matches(r, 'Sales Invoice')
+    )
+    goods_debit = sum(
+        flt(r.get('debit', 0)) for r in data
+        if voucher_type_matches(r, 'Purchase Invoice') or voucher_type_matches(r, 'Sales Invoice')
+    )
 
-    money_credit = sum(flt(r.get('credit', 0)) for r in data
-                       if r.get('voucher_type') == 'Payment Entry')
-    money_debit = sum(flt(r.get('debit', 0)) for r in data
-                      if r.get('voucher_type') == 'Payment Entry')
+    money_credit = sum(
+        flt(r.get('credit', 0)) for r in data
+        if voucher_type_matches(r, 'Payment Entry')
+    )
+    money_debit = sum(
+        flt(r.get('debit', 0)) for r in data
+        if voucher_type_matches(r, 'Payment Entry')
+    )
 
-    accruals_credit = sum(flt(r.get('credit', 0)) for r in data
-                          if r.get('voucher_type') == 'Journal Entry')
-    accruals_debit = sum(flt(r.get('debit', 0)) for r in data
-                         if r.get('voucher_type') == 'Journal Entry')
+    accruals_credit = sum(
+        flt(r.get('credit', 0)) for r in data
+        if voucher_type_matches(r, 'Journal Entry')
+    )
+    accruals_debit = sum(
+        flt(r.get('debit', 0)) for r in data
+        if voucher_type_matches(r, 'Journal Entry')
+    )
 
     closing_credit = closing_balance if closing_balance > 0 else 0
     closing_debit = abs(closing_balance) if closing_balance < 0 else 0
