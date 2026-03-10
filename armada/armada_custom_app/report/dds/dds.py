@@ -88,65 +88,140 @@ def get_data(filters):
 
     data = []
 
-    data.append({
-        "posting_date": None,
-        "voucher_type": None,
-        "voucher_no": None,
-        "description": _("Нач. остаток"),
-        "kirim": 0,
-        "chiqim": 0,
-        "balance": opening_balance,
-        "is_opening": 1,
-    })
-
-    balance = opening_balance
-    total_kirim = 0
-    total_chiqim = 0
-
     # Filterlar
     filter_party_type = filters.get("party_type")
     filter_party = filters.get("party")
     filter_category = CATEGORY_MAP.get(filters.get("category"))
 
-    for row in transactions:
-        kirim = flt(row.debit_in_account_currency)
-        chiqim = flt(row.credit_in_account_currency)
+    # Boshlang'ich vizual qoldiq (Haqiqiy pul qoldig'i, chunki u davrboshi)
+    balance = opening_balance
+    total_kirim = 0
+    total_chiqim = 0
 
-        info = resolve_transaction_info(row, pe_info, je_info, cash_accounts)
+    if filter_category == "expense":
+        # === FAQAT XARAJATLAR UCHUN GURUHLASH LOGIKASI ===
+        grouped_expenses = {}
 
-        # Category filter
-        if filter_category and info["category"] != filter_category:
-            balance += kirim - chiqim
-            continue
+        for row in transactions:
+            kirim = flt(row.debit_in_account_currency)
+            chiqim = flt(row.credit_in_account_currency)
+            info = resolve_transaction_info(row, pe_info, je_info, cash_accounts)
 
-        # Party filter
-        if filter_party_type and info.get("party_type") != filter_party_type:
-            balance += kirim - chiqim
-            continue
-        if filter_party and info.get("party") != filter_party:
-            balance += kirim - chiqim
-            continue
+            if info["category"] != "expense":
+                continue
+            if filter_party_type and info.get("party_type") != filter_party_type:
+                continue
+            if filter_party and info.get("party") != filter_party:
+                continue
 
-        balance += kirim - chiqim
-        total_kirim += kirim
-        total_chiqim += chiqim
+            desc = info["description"]
+            if desc not in grouped_expenses:
+                grouped_expenses[desc] = []
+
+            grouped_expenses[desc].append({
+                "row": row,
+                "info": info,
+                "kirim": kirim,
+                "chiqim": chiqim,
+            })
 
         data.append({
-            "posting_date": row.posting_date,
-            "voucher_type": row.voucher_type,
-            "voucher_no": row.voucher_no,
-            "description": info["description"],
-            "kirim": kirim,
-            "chiqim": chiqim,
-            "balance": balance,
-            "category": info["category"],
+            "posting_date": None,
+            "voucher_type": None,
+            "voucher_no": None,
+            "description": _("Нач. остаток (Общий)"),
+            "kirim": 0,
+            "chiqim": 0,
+            "balance": opening_balance,
+            "is_opening": 1,
         })
 
+        for group_desc, items in grouped_expenses.items():
+            group_kirim = 0
+            group_chiqim = 0
+            group_balance = opening_balance # Yoki guruh boshida balans yana boshlang'ichga tenglanadimi? Sizning vizualingizda "8000" dan boshlangan, ya'ni balans uzluksiz ketyapti.
+
+            # Agar qoldiq har bir guruhga kirmasdan, butun xarajatlar ro'yxati bo'ylab ayirib borilishi kerak bo'lsa:
+            for item in items:
+                kirim = item["kirim"]
+                chiqim = item["chiqim"]
+                
+                balance += kirim - chiqim
+                group_kirim += kirim
+                group_chiqim += chiqim
+                
+                total_kirim += kirim
+                total_chiqim += chiqim
+
+                data.append({
+                    "posting_date": item["row"].posting_date,
+                    "voucher_type": item["row"].voucher_type,
+                    "voucher_no": item["row"].voucher_no,
+                    "description": item["info"]["description"],
+                    "kirim": kirim,
+                    "chiqim": chiqim,
+                    "balance": balance,
+                    "category": item["info"]["category"],
+                })
+
+            # Subtotal qatori
+            data.append({
+                "posting_date": None,
+                "voucher_type": None,
+                "voucher_no": None,
+                "description": f"<b>Итого {group_desc}</b>",
+                "kirim": group_kirim,
+                "chiqim": group_chiqim,
+                "balance": balance, # Qoldiq uzluksiz ulanadi
+                "is_subtotal": 1, # Frontend yoki CSSda ajratib olish uchun belgi
+            })
+            
+    else:
+        # === BOSHQA KATEGORIYALAR (YOKI UMUMIY) UCHUN ODATIY LOGIKA ===
+        data.append({
+            "posting_date": None,
+            "voucher_type": None,
+            "voucher_no": None,
+            "description": _("Нач. остаток"),
+            "kirim": 0,
+            "chiqim": 0,
+            "balance": opening_balance,
+            "is_opening": 1,
+        })
+
+        for row in transactions:
+            kirim = flt(row.debit_in_account_currency)
+            chiqim = flt(row.credit_in_account_currency)
+            info = resolve_transaction_info(row, pe_info, je_info, cash_accounts)
+
+            if filter_category and info["category"] != filter_category:
+                continue
+            if filter_party_type and info.get("party_type") != filter_party_type:
+                continue
+            if filter_party and info.get("party") != filter_party:
+                continue
+
+            balance += kirim - chiqim
+            total_kirim += kirim
+            total_chiqim += chiqim
+
+            data.append({
+                "posting_date": row.posting_date,
+                "voucher_type": row.voucher_type,
+                "voucher_no": row.voucher_no,
+                "description": info["description"],
+                "kirim": kirim,
+                "chiqim": chiqim,
+                "balance": balance,
+                "category": info["category"],
+            })
+
+    # Eng oxirgi Grand Total (Ikkala holat uchun ham bitta)
     data.append({
         "posting_date": None,
         "voucher_type": None,
         "voucher_no": None,
-        "description": _("ИТОГО"),
+        "description": "<b>ИТОГО</b>",
         "kirim": total_kirim,
         "chiqim": total_chiqim,
         "balance": balance,
