@@ -54,7 +54,8 @@ add_to_apps_screen = [
 app_include_css = "/assets/armada/css/armada-dashboard.css"
 app_include_js = [
 	"https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js",
-	"/assets/armada/js/armada-dashboard.bundle.js"
+	"/assets/armada/js/armada-dashboard.bundle.js",
+	"/assets/armada/js/pl_pdf_button.js"
 ]
 
 # include js, css files in header of desk.html
