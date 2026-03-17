@@ -1,4 +1,3 @@
-// ERPNext 15 bug fix — bo'sh filter xatosini suppress qil
 const _orig_msgprint = frappe.msgprint.bind(frappe);
 frappe.msgprint = function(msg, ...args) {
     if (typeof msg === "string" &&
@@ -28,6 +27,11 @@ $(document).on("page-change", function() {
                             }
                         });
                     }).addClass("btn-pl-custom-pdf");
+
+                // ← BU IKKI QATOR — muammoni hal qiladi
+                $(".custom-actions")
+                    .removeClass("hidden-xs hidden-md hidden-sm hidden")
+                    .css("display", "flex");
             }
         }, 500);
     }
