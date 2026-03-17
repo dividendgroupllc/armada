@@ -6,7 +6,7 @@ import os
 import pdfplumber
 from collections import defaultdict
 
-from armada_custom_app.pdf_engine.base_generator import (
+from armada.armada_custom_app.pdf_engine.base_generator import (
     register_fonts, get_template, get_output_path,
     new_canvas, resolve_font, to_color, rl_y,
     C_BLACK, C_WHITE, C_RED,
