@@ -132,9 +132,11 @@ def generate_pl_pdf(filters):
 def _normalize_filters(f):
     return {
         "company":            f.get("company"),
-        "filter_based_on":    "Date Range",
+        "filter_based_on":    f.get("filter_based_on", "Date Range"),
         "period_start_date":  f.get("period_start_date"),
         "period_end_date":    f.get("period_end_date"),
+        "from_fiscal_year":   f.get("from_fiscal_year"),
+        "to_fiscal_year":     f.get("to_fiscal_year"),
         "periodicity":        f.get("periodicity", "Monthly"),
         "accumulated_values": int(f.get("accumulated_values", 0)),
         "include_default_book_entries": int(
