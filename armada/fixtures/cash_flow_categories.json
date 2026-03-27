@@ -1,0 +1,59 @@
+[
+ {
+  "direct_cash_flow": [
+   {
+    "direct_expence_account": "5201 - Аренда цех - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Операционная деятельность"
+   },
+   {
+    "direct_expence_account": "5204 - Зарплата Производства - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Операционная деятельность"
+   },
+   {
+    "direct_expence_account": "5208 - Коммунальный платёж - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Операционная деятельность"
+   },
+   {
+    "direct_expence_account": "5215 - Продукт - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Инвестиционная деятельность"
+   },
+   {
+    "direct_expence_account": "5205 - ИНПС - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Финансовая деятельность"
+   },
+   {
+    "direct_expence_account": "5220 - СП - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Операционная деятельность"
+   },
+   {
+    "direct_expence_account": "5233 - Услуги - AM",
+    "parent": "109m4imb7d",
+    "parentfield": "direct_cash_flow",
+    "parenttype": "Cash Flow Categories",
+    "виды_деятельности": "Операционная деятельность"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Cash Flow Categories",
+  "modified": "2026-03-27 22:37:43.334774",
+  "name": "109m4imb7d"
+ }
+]

@@ -1,0 +1,40 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-27 21:09:46.021591",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "\u0432\u0438\u0434\u044b_\u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u0438",
+  "direct_expence_account"
+ ],
+ "fields": [
+  {
+   "fieldname": "\u0432\u0438\u0434\u044b_\u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u0438",
+   "fieldtype": "Select",
+   "label": "\u0412\u0438\u0434\u044b \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u0438",
+   "options": "\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u0430\u044f \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c\n\u0418\u043d\u0432\u0435\u0441\u0442\u0438\u0446\u0438\u043e\u043d\u043d\u0430\u044f \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c\n\u0424\u0438\u043d\u0430\u043d\u0441\u043e\u0432\u0430\u044f \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c"
+  },
+  {
+   "fieldname": "direct_expence_account",
+   "fieldtype": "Link",
+   "label": "Direct expence account",
+   "options": "Account"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-03-27 22:13:01.012174",
+ "modified_by": "Administrator",
+ "module": "Armada Custom app",
+ "name": "Cash Flow Categories Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
