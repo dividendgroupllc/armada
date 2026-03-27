@@ -242,35 +242,69 @@ def get_current_liabilities():
 
 # ── Cash / Transfer balances ────────────────────────────────────────────────
 
-def get_cash_balance():
-	"""Net cash balance (Наличные income − expense) from Payment Entry."""
-	income = frappe.db.sql("""
-		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Receive'
-			AND mode_of_payment = 'Наличные'
-	""")
-	expense = frappe.db.sql("""
-		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Pay'
-			AND mode_of_payment = 'Наличные'
-	""")
+def get_cash_balance(to_date=None):
+    """Net cash balance from ALL Mode of Payment accounts from GL Entry."""
+    from frappe.utils import flt
+    import frappe
 
-	return (flt(income[0][0]) if income and income[0][0] else 0) \
-		 - (flt(expense[0][0]) if expense and expense[0][0] else 0)
+    accounts = frappe.get_all(
+        "Mode of Payment Account",
+        fields=["default_account"],
+        pluck="default_account"
+    )
+    cash_accounts = list(set(a for a in accounts if a))
+
+    if not cash_accounts:
+        return 0.0
+
+    placeholders = ", ".join(["%s"] * len(cash_accounts))
+    date_condition = "AND posting_date <= %s" if to_date else ""
+    params = tuple(cash_accounts)
+    if to_date:
+        params = params + (to_date,)
+
+    query = f"""
+        SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
+        FROM `tabGL Entry`
+        WHERE account IN ({placeholders})
+          AND is_cancelled = 0
+          {date_condition}
+    """
+    result = frappe.db.sql(query, params)
+
+    return flt(result[0][0]) if result else 0.0
 
 
-def get_transfer_balance():
-	"""Net transfer balance (Клик + Перечисление income − expense)."""
-	income = frappe.db.sql("""
-		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Receive'
-			AND mode_of_payment IN ('Клик', 'Перечисление')
-	""")
-	expense = frappe.db.sql("""
-		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Pay'
-			AND mode_of_payment IN ('Клик', 'Перечисление')
-	""")
 
-	return (flt(income[0][0]) if income and income[0][0] else 0) \
-		 - (flt(expense[0][0]) if expense and expense[0][0] else 0)
+def get_transfer_balance(to_date=None):
+	"""Net transfer balance (Клик + Перечисление income − expense) from GL Entry."""
+	from frappe.utils import flt
+	import frappe
+
+	accounts = frappe.get_all(
+		"Mode of Payment Account",
+		filters={"parent": ["in", ["Клик", "Перечисление"]]},
+		fields=["default_account"],
+		pluck="default_account"
+	)
+	cash_accounts = list(set(a for a in accounts if a))
+
+	if not cash_accounts:
+		return 0.0
+
+	placeholders = ", ".join(["%s"] * len(cash_accounts))
+	date_condition = "AND posting_date <= %s" if to_date else ""
+	params = tuple(cash_accounts)
+	if to_date:
+		params = params + (to_date,)
+
+	query = f"""
+		SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
+		FROM `tabGL Entry`
+		WHERE account IN ({placeholders})
+		  AND is_cancelled = 0
+		  {date_condition}
+	"""
+	result = frappe.db.sql(query, params)
+
+	return flt(result[0][0]) if result else 0.0
