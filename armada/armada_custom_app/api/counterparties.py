@@ -34,33 +34,28 @@ CACHE_TTL = 300  # 5 minutes TTL (safety net if scheduler misses)
 def _calc_supplier_debts(from_date=None, to_date=None):
 	"""
 	Calculate debt for each supplier from GL Entry.
-
-	For payable accounts the balance is credit − debit.
-	Positive result = we owe the supplier.
-	Negative result = supplier overpaid / advance.
-
-	Uses account_type = 'Payable' to automatically pick the right
-	creditor accounts (works regardless of chart-of-accounts naming).
 	"""
 	date_condition = ""
 	params = []
-	if from_date and to_date:
-		date_condition = "AND gle.posting_date BETWEEN %s AND %s"
-		params = [from_date, to_date]
+	if to_date:
+		date_condition = "AND gle.posting_date <= %s"
+		params.append(to_date)
+	elif from_date and not to_date:
+		date_condition = "AND gle.posting_date <= %s"
+		params.append(from_date)
 
 	data = frappe.db.sql(f"""
 		SELECT
 			gle.party                          AS supplier,
-			SUM(gle.credit - gle.debit)        AS debt_amount
+			SUM(gle.credit_in_account_currency - gle.debit_in_account_currency) AS debt_amount
 		FROM `tabGL Entry` gle
-		INNER JOIN `tabAccount` acc ON acc.name = gle.account
 		WHERE gle.is_cancelled   = 0
 			AND gle.party_type   = 'Supplier'
-			AND acc.account_type = 'Payable'
 			AND gle.party IS NOT NULL AND gle.party != ''
 			{date_condition}
 		GROUP BY gle.party
-		HAVING debt_amount != 0
+	
+HAVING debt_amount != 0
 		ORDER BY debt_amount DESC
 	""", tuple(params), as_dict=True)
 
@@ -70,37 +65,33 @@ def _calc_supplier_debts(from_date=None, to_date=None):
 def _calc_customer_debts(from_date=None, to_date=None):
 	"""
 	Calculate debt for each customer from GL Entry.
-
-	For receivable accounts the balance is debit − credit.
-	Positive result  = customer owes us.
-	Negative result  = we owe the customer (over-receipt / advance).
-
-	Uses account_type = 'Receivable' to automatically pick the right
-	debtor accounts.
 	"""
 	date_condition = ""
 	params = []
-	if from_date and to_date:
-		date_condition = "AND gle.posting_date BETWEEN %s AND %s"
-		params = [from_date, to_date]
+	if to_date:
+		date_condition = "AND gle.posting_date <= %s"
+		params.append(to_date)
+	elif from_date and not to_date:
+		date_condition = "AND gle.posting_date <= %s"
+		params.append(from_date)
 
 	data = frappe.db.sql(f"""
 		SELECT
 			gle.party                          AS customer,
-			SUM(gle.debit - gle.credit)        AS debt_amount
+			SUM(gle.debit_in_account_currency - gle.credit_in_account_currency) AS debt_amount
 		FROM `tabGL Entry` gle
-		INNER JOIN `tabAccount` acc ON acc.name = gle.account
 		WHERE gle.is_cancelled   = 0
 			AND gle.party_type   = 'Customer'
-			AND acc.account_type = 'Receivable'
 			AND gle.party IS NOT NULL AND gle.party != ''
 			{date_condition}
 		GROUP BY gle.party
-		HAVING debt_amount != 0
+
+HAVING debt_amount != 0
 		ORDER BY debt_amount DESC
 	""", tuple(params), as_dict=True)
 
 	return data or []
+
 
 
 # ── Cache layer ─────────────────────────────────────────────────────────────

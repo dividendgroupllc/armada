@@ -176,8 +176,8 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 			"cash_expense": cur_kpi["cash_expense"],
 			"cash_expense_change": calculate_change(cur_kpi["cash_expense"], prev_kpi["cash_expense"]),
 			"transfer_expense": cur_kpi["transfer_expense"],
-			"current_cash": get_cash_balance(),
-			"current_transfer": get_transfer_balance(),
+			"current_cash": get_cash_balance(to_date),
+			"current_transfer": get_transfer_balance(to_date),
 		}
 		return data
 
@@ -203,8 +203,8 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 		"cash_expense": cash_expense,
 		"cash_expense_change": calculate_change(cash_expense, prev_cash_expense),
 		"transfer_expense": transfer_expense,
-		"current_cash": get_cash_balance(),
-		"current_transfer": get_transfer_balance(),
+		"current_cash": get_cash_balance(to_date),
+		"current_transfer": get_transfer_balance(to_date),
 	}
 
 	return data

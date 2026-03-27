@@ -53,7 +53,7 @@ def get_main_kpis(from_date=None, to_date=None):
 
 	customer_debt = get_customer_outstanding(from_date, to_date)
 	supplier_debt = get_supplier_outstanding(from_date, to_date)
-	cash_balance = get_cash_balance()
+	cash_balance = get_cash_balance(to_date)
 
 	current_assets = get_current_assets()
 	current_liabilities = get_current_liabilities()
@@ -148,7 +148,7 @@ def get_production_data(from_date=None, to_date=None):
 					AND se.posting_date BETWEEN %s AND %s
 					AND sed.is_finished_item = 1
 				GROUP BY se.posting_date, sed.item_name, sed.uom
-				ORDER BY se.posting_date DESC
+				ORDER BY sed.qty DESC
 			""", (from_date, to_date), as_dict=True)
 
 			if data:
