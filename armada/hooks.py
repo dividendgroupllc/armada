@@ -27,7 +27,12 @@ fixtures = [
 
 # Apps
 # ------------------
-
+doc_events = {
+    "Cash Flow Categories": {
+        "on_update": "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
+        "on_trash":  "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
+    }
+}
 # required_apps = []
 
 add_to_apps_screen = [

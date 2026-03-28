@@ -1,10 +1,14 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "autoname": "Cash_Flow-.YYYY.-.#####",
  "creation": "2026-03-27 21:05:19.569363",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "category_name",
+  "activity_type",
+  "is_inflow",
+  "sort_order",
   "direct_cash_flow"
  ],
  "fields": [
@@ -13,15 +17,45 @@
    "fieldtype": "Table",
    "label": "Direct Cash Flow",
    "options": "Cash Flow Categories Item"
+  },
+  {
+   "fieldname": "category_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "activity_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Activity Type",
+   "options": "\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u0430\u044f \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c\n\u0418\u043d\u0432\u0435\u0441\u0442\u0438\u0446\u0438\u043e\u043d\u043d\u0430\u044f \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c\n\u0424\u0438\u043d\u0430\u043d\u0441\u043e\u0432\u0430\u044f \u0434\u0435\u044f\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Inflow=1, Outflow=0",
+   "fieldname": "is_inflow",
+   "fieldtype": "Check",
+   "label": "Is Inflow (\u041f\u0440\u0438\u0445\u043e\u0434)"
+  },
+  {
+   "default": "0",
+   "fieldname": "sort_order",
+   "fieldtype": "Int",
+   "label": "Sort Order"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-27 22:13:11.985359",
+ "modified": "2026-03-28 15:29:58.674745",
  "modified_by": "Administrator",
  "module": "Armada Custom app",
  "name": "Cash Flow Categories",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
