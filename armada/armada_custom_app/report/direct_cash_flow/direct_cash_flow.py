@@ -632,3 +632,11 @@ def _subtotal_row(activity, period_totals, periods):
 
 def _spacer_row():
     return {"label": "", "row_type": "spacer"}
+
+
+# ---------------------------------------------------------------------------
+# CACHE INVALIDATION  (called from hooks.py on_update / on_trash)
+# ---------------------------------------------------------------------------
+
+def clear_cache(doc=None, method=None):
+    frappe.cache().delete_value("direct_cash_flow_account_map_v2")
