@@ -22,7 +22,6 @@ fixtures = [
     "Account Name Mapping",
     "Account Name Mapping Item",
 	"Cash Flow Categories",
-    "Cash Flow Categories Item"
 ]
 
 # Apps
