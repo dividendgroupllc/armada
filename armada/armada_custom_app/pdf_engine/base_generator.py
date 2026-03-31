@@ -53,10 +53,20 @@ def register_fonts():
     # Arial — strelka (↓↑) va boshqa maxsus belgilar uchun
     _arial = "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf"
     _arial_bold = "/usr/share/fonts/truetype/msttcorefonts/arialbd.ttf"
-    if os.path.exists(_arial):
+    _has_arial = os.path.exists(_arial)
+    _has_arial_bold = os.path.exists(_arial_bold)
+    if _has_arial:
         pdfmetrics.registerFont(TTFont("Arial", _arial))
-    if os.path.exists(_arial_bold):
+    if _has_arial_bold:
         pdfmetrics.registerFont(TTFont("Arial-Bold", _arial_bold))
+    # Build FONT_MAP dynamically — fallback to Rubik if Arial not installed
+    _arial_font = "Arial" if _has_arial else "Rubik"
+    _arial_bold_font = "Arial-Bold" if _has_arial_bold else "Rubik-Bold"
+    FONT_MAP.update({
+        "MUFUZY+ArialMT": _arial_font,
+        "ArialMT":         _arial_font,
+        "Arial-BoldMT":    _arial_bold_font,
+    })
     _fonts_registered = True
 
 # Maps embedded subset name → registered ReportLab font name
@@ -64,9 +74,9 @@ FONT_MAP = {
     "MUFUZY+Rubik-Regular": "Rubik",
     "MUFUZY+Rubik-Bold":    "Rubik-Bold",
     "MUFUZY+Rubik-Italic":  "Rubik-Italic",
-    "MUFUZY+ArialMT":       "Arial",
-    "ArialMT":              "Arial",
-    "Arial-BoldMT":         "Arial-Bold",
+    "MUFUZY+ArialMT":       "Rubik",
+    "ArialMT":              "Rubik",
+    "Arial-BoldMT":         "Rubik-Bold",
 }
 
 def resolve_font(fontname: str) -> str:
