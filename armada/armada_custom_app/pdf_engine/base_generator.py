@@ -40,7 +40,7 @@ PAGE_H  = 1191.0   # A3 portrait height (pt)
 _fonts_registered = False
 
 def register_fonts():
-    """Register Rubik font family. Call once before any canvas operation."""
+    """Register Rubik font family + system Arial. Call once before any canvas operation."""
     global _fonts_registered
     if _fonts_registered:
         return
@@ -50,6 +50,13 @@ def register_fonts():
         os.path.join(FONT_DIR, "RubikFull-bold.ttf")))
     pdfmetrics.registerFont(TTFont("Rubik-Italic",
         os.path.join(FONT_DIR, "RubikFull-italic.ttf")))
+    # Arial — strelka (↓↑) va boshqa maxsus belgilar uchun
+    _arial = "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf"
+    _arial_bold = "/usr/share/fonts/truetype/msttcorefonts/arialbd.ttf"
+    if os.path.exists(_arial):
+        pdfmetrics.registerFont(TTFont("Arial", _arial))
+    if os.path.exists(_arial_bold):
+        pdfmetrics.registerFont(TTFont("Arial-Bold", _arial_bold))
     _fonts_registered = True
 
 # Maps embedded subset name → registered ReportLab font name
@@ -57,7 +64,9 @@ FONT_MAP = {
     "MUFUZY+Rubik-Regular": "Rubik",
     "MUFUZY+Rubik-Bold":    "Rubik-Bold",
     "MUFUZY+Rubik-Italic":  "Rubik-Italic",
-    # Add more mappings if future templates use different font subsets
+    "MUFUZY+ArialMT":       "Arial",
+    "ArialMT":              "Arial",
+    "Arial-BoldMT":         "Arial-Bold",
 }
 
 def resolve_font(fontname: str) -> str:

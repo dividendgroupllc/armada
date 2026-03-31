@@ -247,6 +247,9 @@ def generate(data: dict,
         # 3. Draw rows
         for top_key in sorted(rows.keys()):
             chars = rows[top_key]
+            row_text = "".join(ch.get("text", "") for ch in chars)
+            if "#REF" in row_text:
+                continue
 
             # SKIP statik header tops — dinamik chizamiz
             if top_key in HEADER_TOPS:
