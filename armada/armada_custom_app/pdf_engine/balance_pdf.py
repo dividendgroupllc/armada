@@ -163,32 +163,36 @@ def _derive(data, n):
                      + zadolzh_sotr[i] + dolg_debit[i] for i in range(n)]
     prochie_akt = [rashody_bud[i] + prochee_aktiv[i] for i in range(n)]
 
-    # ── ERPNext total rows (aniq, hech narsa tushib qolmaydi) ──
+    # ── ERPNext total rows ──
     erp_total_asset  = g("_erp_total_asset")
     erp_total_credit = g("_erp_total_credit")
 
-    # itogo_aktiv va itogo_passiv — ERPNext totallaridan olish
-    # Bu individual accountlarni qo'lda yig'ishdan ko'ra ishonchli,
-    # chunki mapping da yo'q accountlar ham hisobga olinadi
-    itogo_aktiv  = erp_total_asset
-    itogo_passiv = erp_total_credit
+    # ERPNext totallar bor-yo'qligini tekshirish
+    has_erp_totals = any(v != 0 for v in erp_total_asset)
+
+    if has_erp_totals:
+        itogo_aktiv  = erp_total_asset
+        itogo_passiv = erp_total_credit
+    else:
+        # Fallback: manual hisoblash (ERPNext total row nomlari mos kelmasa)
+        itogo_aktiv = [
+            oborudovanie[i] + syryo[i] + polufabrikat[i] + gotoviy_produkt[i]
+            + nalichnye[i] + klik[i] + perechislenie[i] + raznitsa_peremesh[i]
+            + zadolzh_klientov[i] + avansy_postav[i] + zadolzh_sotr[i] + dolg_debit[i]
+            + rashody_bud[i] + prochee_aktiv[i]
+            for i in range(n)
+        ]
+        itogo_passiv = [
+            ustavniy[i] + pribyl_pr[i] + pribyl_tek[i] + dividendy[i] + investiciya[i]
+            + kredit_dolg[i] + zaymy_dolg[i] + lizing[i]
+            + kredit_kratk[i] + zaymy_kratk[i]
+            + zadolzh_postav[i] + zadolzh_sotr_p[i] + zadolzh_nalog[i]
+            + avansy_kl[i] + zarplata_sobst[i] + prochie_obyaz[i]
+            for i in range(n)
+        ]
 
     # Разница = Total Credit - Total Debit (balansda 0 bo'lishi kerak)
-    raznitsa = [erp_total_credit[i] - erp_total_asset[i] for i in range(n)]
-
-    # ── Sub-totals (PDF da ko'rsatish uchun) ──
-    kapital = [
-        ustavniy[i] + pribyl_pr[i] + pribyl_tek[i]
-        + dividendy[i] + investiciya[i]
-        for i in range(n)
-    ]
-    dolgosrochnye = [kredit_dolg[i] + zaymy_dolg[i] + lizing[i] for i in range(n)]
-    kratkosrochnye = [kredit_kratk[i] + zaymy_kratk[i] for i in range(n)]
-    kredit_zadolzh = [
-        zadolzh_postav[i] + zadolzh_sotr_p[i] + zadolzh_nalog[i]
-        + avansy_kl[i] + zarplata_sobst[i] + prochie_obyaz[i]
-        for i in range(n)
-    ]
+    raznitsa = [itogo_passiv[i] - itogo_aktiv[i] for i in range(n)]
 
     return {
         "empty_cash_row":      [0.0] * n,
@@ -348,7 +352,7 @@ def generate(data: dict,
                 data_key, fmt_style = ROW_MAP[best_key]
                 values = full.get(data_key)
                 if not values:
-                    continue
+                    values = [0.0] * n_cols
 
                 # Get font/color from label chars
                 ref = [ch for ch in chars
