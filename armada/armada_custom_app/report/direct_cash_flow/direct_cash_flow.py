@@ -345,23 +345,12 @@ def get_period_opening_balances(company, from_date, periods, cash_accounts):
     def balance_before_date(d):
         """Sum of all GL net strictly before date d."""
         total = 0.0
-        for (yr, mo), cum in cumulative.items():
-            last_day_of_month = calendar.monthrange(yr, mo)[1]
-            month_end = date(yr, mo, last_day_of_month)
-            if month_end < d:
-                # This entire month is before d — but we need incremental net
-                # Recalculate as sum of months whose END < d
-                pass
-        # Simpler: sum net of months that end before d
-        total = 0.0
-        prev_cum = 0.0
         for row in monthly_net:
             yr, mo = int(row["yr"]), int(row["mo"])
             last_day = calendar.monthrange(yr, mo)[1]
             month_end = date(yr, mo, last_day)
-            month_net = flt(row["net"])
             if month_end < d:
-                total += month_net
+                total += flt(row["net"])
         return total
 
     # Calculate opening for each period
@@ -422,22 +411,19 @@ def get_all_movements(filters, cash_accounts):
             je.name                         AS voucher_no,
             je.posting_date,
             CASE
-                WHEN jea_cash.credit > 0 THEN 'Pay'
-                ELSE 'Receive'
+                WHEN jea_counter.debit > 0 THEN 'Receive'
+                ELSE 'Pay'
             END                             AS payment_type,
             jea_counter.account             AS account_from,
-            jea_cash.account                AS account_to,
+            NULL                            AS account_to,
             CASE
-                WHEN jea_cash.credit > 0
-                    THEN jea_cash.credit_in_account_currency
-                ELSE jea_cash.debit_in_account_currency
+                WHEN jea_counter.debit > 0
+                    THEN jea_counter.debit_in_account_currency
+                ELSE jea_counter.credit_in_account_currency
             END                             AS amount,
             NULL                            AS party_type,
             NULL                            AS party
         FROM `tabJournal Entry` je
-        INNER JOIN `tabJournal Entry Account` jea_cash
-            ON jea_cash.parent = je.name
-            AND jea_cash.account IN %(cash_accounts)s
         INNER JOIN `tabJournal Entry Account` jea_counter
             ON jea_counter.parent = je.name
             AND jea_counter.account NOT IN %(cash_accounts)s
@@ -445,6 +431,11 @@ def get_all_movements(filters, cash_accounts):
             je.docstatus   = 1
             AND je.company = %(company)s
             AND je.posting_date BETWEEN %(from_date)s AND %(to_date)s
+            AND je.name IN (
+                SELECT DISTINCT parent
+                FROM `tabJournal Entry Account`
+                WHERE account IN %(cash_accounts)s
+            )
     """.format(
         party_condition=party_condition
     )
