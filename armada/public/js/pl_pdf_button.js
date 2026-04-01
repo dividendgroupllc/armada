@@ -1,15 +1,34 @@
-// /home/user/frappe-bench/apps/armada/armada/public/js/pl_pdf_button.js
+// pl_pdf_button.js
 (function () {
     "use strict";
 
-    const REPORT_NAME = "Profit and Loss Statement";
+    var REPORT_NAME = "Profit and Loss Statement";
 
-    function _is_pl_route() {
-        try {
-            var r = frappe.get_route();
-            if (!r || !r.length) return false;
-            return r[0] === "query-report" && r[1] === REPORT_NAME;
-        } catch(e) { return false; }
+    function _round_summary() {
+        $(".report-summary .summary-value").each(function () {
+            var $el = $(this);
+            var text = $el.text().trim();
+
+            var match = text.match(/^([^\d\-]*)([\d\s\.\,\-]+)$/);
+            if (!match) return;
+
+            var prefix = match[1];
+            var numStr = match[2].trim();
+
+            var cleaned = numStr
+                .replace(/\s/g, "")
+                .replace(/,/g, ".");
+
+            var num = parseFloat(cleaned);
+            if (isNaN(num)) return;
+
+            var rounded = Math.round(num);
+            var formatted = rounded
+                .toLocaleString("fr-FR")
+                .replace(/,/g, ",");
+
+            $el.text(prefix + formatted);
+        });
     }
 
     function _on_click() {
@@ -22,7 +41,7 @@
             if (!filters.period_start_date || !filters.period_end_date) {
                 frappe.show_alert({
                     message: "Avval 'From Date' va 'To Date' ni tanlang",
-                    indicator: "orange"
+                    indicator: "orange",
                 });
                 return;
             }
@@ -30,74 +49,89 @@
             if (!filters.from_fiscal_year || !filters.to_fiscal_year) {
                 frappe.show_alert({
                     message: "Avval 'Start Year' va 'End Year' ni tanlang",
-                    indicator: "orange"
+                    indicator: "orange",
                 });
                 return;
             }
         }
 
-        frappe.show_alert({ message: "PDF tayyorlanmoqda...", indicator: "blue" });
+        frappe.show_alert({
+            message: "PDF tayyorlanmoqda...",
+            indicator: "blue",
+        });
 
         frappe.call({
             method: "armada.armada_custom_app.api.pl_pdf_api.generate_pl_pdf",
             args: { filters: JSON.stringify(filters) },
+            freeze: true,
+            freeze_message: "PDF yaratilmoqda...",
             callback: function (r) {
                 if (r.message && r.message.file_url) {
                     window.open(r.message.file_url);
-                    frappe.show_alert({ message: "PDF tayyor!", indicator: "green" });
+                    frappe.show_alert({
+                        message: "PDF tayyor!",
+                        indicator: "green",
+                    });
                 } else {
-                    frappe.show_alert({ message: "Fayl URL qaytmadi", indicator: "red" });
+                    frappe.show_alert({
+                        message: "Fayl URL qaytmadi",
+                        indicator: "red",
+                    });
                 }
             },
             error: function () {
-                frappe.show_alert({ message: "Server xatoligi", indicator: "red" });
-            }
+                frappe.show_alert({
+                    message: "Server xatoligi",
+                    indicator: "red",
+                });
+            },
         });
     }
 
-    function _add_btn() {
-        if ($(".btn-pl-custom-pdf").length) return;
+    function _inject_button(report) {
+        if (report.page.inner_toolbar.find(".btn-pl-custom-pdf").length) return;
 
-        // DOM dan aniqlangan: .standard-actions ichida .menu-btn-group DAN OLDIN
-        var $menu = $(".standard-actions .menu-btn-group");
-        if (!$menu.length) return;
-
-        var $btn = $(
-            '<button class="btn btn-primary btn-sm btn-pl-custom-pdf"' +
-            ' style="margin-right:6px;">Custom PDF</button>'
-        ).on("click", _on_click);
-
-        // .menu-btn-group dan OLDIN — toolbar da ko'rinadi
-        $menu.before($btn);
+        report.page.add_inner_button(
+            __("Custom PDF"),
+            _on_click
+        ).addClass("btn-pl-custom-pdf btn-primary-dark");
     }
-
-    function _poll_and_inject() {
-        if (!_is_pl_route()) return;
-
-        var attempts = 0;
-        var timer = setInterval(function () {
-            attempts++;
-
-            if (!_is_pl_route() || attempts > 40) {
-                clearInterval(timer);
-                return;
-            }
-
-            if ($(".standard-actions .menu-btn-group").length &&
-                !$(".btn-pl-custom-pdf").length) {
-                clearInterval(timer);
-                _add_btn();
-            }
-        }, 250);
-    }
-
-    $(document).on("page-change", function () {
-        $(".btn-pl-custom-pdf").remove();
-        setTimeout(_poll_and_inject, 100);
-    });
 
     $(document).ready(function () {
-        setTimeout(_poll_and_inject, 500);
-    });
+        var waitForReport = setInterval(function () {
+            if (frappe.query_reports && frappe.query_reports[REPORT_NAME]) {
+                clearInterval(waitForReport);
 
+                var orig = frappe.query_reports[REPORT_NAME];
+                var originalOnload = orig.onload;
+                var originalRefresh = orig.refresh;
+
+                orig.formatter = function (value, row, column, data, df) {
+                    return frappe.armada.currency_formatter(
+                        value, row, column, data, df, 0
+                    );
+                };
+
+                orig.onload = function (report) {
+                    if (originalOnload) originalOnload.call(this, report);
+                    setTimeout(function () {
+                        _inject_button(report);
+                        _round_summary();
+                    }, 300);
+                };
+
+                orig.refresh = function (report) {
+                    if (originalRefresh) originalRefresh.call(this, report);
+                    setTimeout(function () {
+                        _inject_button(report);
+                        _round_summary();
+                    }, 500);
+                };
+
+                orig.after_datatable_render = function () {
+                    setTimeout(_round_summary, 200);
+                };
+            }
+        }, 100);
+    });
 })();

@@ -60,6 +60,7 @@ app_include_css = "/assets/armada/css/armada-dashboard.css"
 app_include_js = [
 	"https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js",
 	"/assets/armada/js/armada-dashboard.bundle.js",
+	"/assets/armada/js/report_formatter.js",
 	"/assets/armada/js/pl_pdf_button.js",
 	"/assets/armada/js/balance_sheet_pdf.js",
 ]

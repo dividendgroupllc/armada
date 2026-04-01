@@ -1,17 +1,38 @@
-// /home/user/frappe-bench/apps/armada/armada/public/js/balance_sheet_pdf.js
 (function () {
     "use strict";
 
-    const REPORT_NAME = "Balance Sheet";
+    var REPORT_NAME = "Balance Sheet";
 
-    function _is_bs_route() {
-        try {
-            var r = frappe.get_route();
-            if (!r || !r.length) return false;
-            return r[0] === "query-report" && r[1] === REPORT_NAME;
-        } catch (e) {
-            return false;
-        }
+    // ——— Summary raqamlarini yaxlitlash ———
+    function _round_summary() {
+        $(".report-summary .summary-value").each(function () {
+            var $el = $(this);
+            var text = $el.text().trim();
+
+            // "$ 199 516,1880000" formatdagi raqamni olish
+            // Valyuta belgisini ajratish
+            var match = text.match(/^([^\d\-]*)([\d\s\.\,\-]+)$/);
+            if (!match) return;
+
+            var prefix = match[1];        // "$ "
+            var numStr = match[2].trim(); // "199 516,1880000"
+
+            // Raqamni parse qilish (vergul = decimal, probel = minglik)
+            var cleaned = numStr
+                .replace(/\s/g, "")       // probellarni olib tashlash
+                .replace(/,/g, ".");      // vergulni nuqtaga
+
+            var num = parseFloat(cleaned);
+            if (isNaN(num)) return;
+
+            // Yaxlitlash va formatlash
+            var rounded = Math.round(num);
+            var formatted = rounded
+                .toLocaleString("fr-FR")  // probel bilan minglik ajratish
+                .replace(/,/g, ",");      // kasr vergul
+
+            $el.text(prefix + formatted);
+        });
     }
 
     function _on_click() {
@@ -71,77 +92,52 @@
         });
     }
 
-    function _add_btn() {
-        if ($(".btn-bs-custom-pdf").length) return;
+    function _inject_button(report) {
+        if (report.page.inner_toolbar.find(".btn-bs-custom-pdf").length) return;
 
-        // 1-usul: frappe.query_report.page API orqali (ishonchli)
-        if (
-            frappe.query_report &&
-            frappe.query_report.page &&
-            frappe.query_report.report_name === REPORT_NAME
-        ) {
-            frappe.query_report.page.add_inner_button(
-                __("Custom PDF"),
-                _on_click
-            ).addClass("btn-bs-custom-pdf btn-primary-dark");
-            return;
-        }
-
-        // 2-usul: fallback — DOM ga to'g'ridan-to'g'ri qo'shish
-        var $actions = $(".page-head .standard-actions");
-        if (!$actions.length) return;
-
-        var $btn = $(
-            '<button class="btn btn-primary btn-sm btn-bs-custom-pdf"' +
-                ' style="margin-right:6px;">Custom PDF</button>'
-        ).on("click", _on_click);
-
-        // primary-action buttondan oldin joylashtirish
-        var $primary = $actions.find(".primary-action");
-        if ($primary.length) {
-            $primary.before($btn);
-        } else {
-            $actions.prepend($btn);
-        }
+        report.page.add_inner_button(
+            __("Custom PDF"),
+            _on_click
+        ).addClass("btn-bs-custom-pdf btn-primary-dark");
     }
-
-    function _poll_and_inject() {
-        if (!_is_bs_route()) return;
-
-        var attempts = 0;
-        var timer = setInterval(function () {
-            attempts++;
-
-            if (!_is_bs_route() || attempts > 80) {
-                clearInterval(timer);
-                return;
-            }
-
-            // frappe.query_report to'liq tayyor bo'lishini kutish
-            if (
-                frappe.query_report &&
-                frappe.query_report.report_name === REPORT_NAME &&
-                frappe.query_report.page &&
-                $(".page-head .standard-actions").length &&
-                !$(".btn-bs-custom-pdf").length
-            ) {
-                clearInterval(timer);
-                // report onload tugashini kutish uchun kichik kechikish
-                setTimeout(_add_btn, 500);
-            }
-        }, 250);
-    }
-
-    $(document).on("page-change", function () {
-        $(".btn-bs-custom-pdf").remove();
-        if (_is_bs_route()) {
-            setTimeout(_poll_and_inject, 200);
-        }
-    });
 
     $(document).ready(function () {
-        if (_is_bs_route()) {
-            setTimeout(_poll_and_inject, 800);
-        }
+        var waitForReport = setInterval(function () {
+            if (frappe.query_reports && frappe.query_reports[REPORT_NAME]) {
+                clearInterval(waitForReport);
+
+                var orig = frappe.query_reports[REPORT_NAME];
+                var originalOnload = orig.onload;
+                var originalRefresh = orig.refresh;
+
+                // Formatter — jadval uchun
+                orig.formatter = function (value, row, column, data, df) {
+                    return frappe.armada.currency_formatter(
+                        value, row, column, data, df, 0
+                    );
+                };
+
+                orig.onload = function (report) {
+                    if (originalOnload) originalOnload.call(this, report);
+                    setTimeout(function () {
+                        _inject_button(report);
+                        _round_summary();
+                    }, 300);
+                };
+
+                orig.refresh = function (report) {
+                    if (originalRefresh) originalRefresh.call(this, report);
+                    setTimeout(function () {
+                        _inject_button(report);
+                        _round_summary();
+                    }, 500);
+                };
+
+                // Report after_datatable_render ham tutish
+                orig.after_datatable_render = function (datatable) {
+                    setTimeout(_round_summary, 200);
+                };
+            }
+        }, 100);
     });
 })();
