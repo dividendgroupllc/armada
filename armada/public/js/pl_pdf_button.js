@@ -1,35 +1,11 @@
 // pl_pdf_button.js
+// Survives Frappe SPA navigation — patches are re-applied automatically
+// when Frappe's eval() recreates the report config object.
 (function () {
     "use strict";
 
     var REPORT_NAME = "Profit and Loss Statement";
-
-    function _round_summary() {
-        $(".report-summary .summary-value").each(function () {
-            var $el = $(this);
-            var text = $el.text().trim();
-
-            var match = text.match(/^([^\d\-]*)([\d\s\.\,\-]+)$/);
-            if (!match) return;
-
-            var prefix = match[1];
-            var numStr = match[2].trim();
-
-            var cleaned = numStr
-                .replace(/\s/g, "")
-                .replace(/,/g, ".");
-
-            var num = parseFloat(cleaned);
-            if (isNaN(num)) return;
-
-            var rounded = Math.round(num);
-            var formatted = rounded
-                .toLocaleString("fr-FR")
-                .replace(/,/g, ",");
-
-            $el.text(prefix + formatted);
-        });
-    }
+    var BTN_CLASS = "btn-pl-custom-pdf";
 
     function _on_click() {
         if (!frappe.query_report) return;
@@ -89,49 +65,45 @@
     }
 
     function _inject_button(report) {
-        if (report.page.inner_toolbar.find(".btn-pl-custom-pdf").length) return;
+        if (!report || !report.page) return;
+        if (report.page.inner_toolbar.find("." + BTN_CLASS).length) return;
 
-        report.page.add_inner_button(
-            __("Custom PDF"),
-            _on_click
-        ).addClass("btn-pl-custom-pdf btn-primary-dark");
+        report.page
+            .add_inner_button(__("Custom PDF"), _on_click)
+            .addClass(BTN_CLASS + " btn-primary-dark");
     }
 
-    $(document).ready(function () {
-        var waitForReport = setInterval(function () {
-            if (frappe.query_reports && frappe.query_reports[REPORT_NAME]) {
-                clearInterval(waitForReport);
+    // This function is called by frappe.armada.patch_report EVERY TIME
+    // Frappe recreates the report config (on each SPA navigation).
+    frappe.armada.patch_report(REPORT_NAME, function (reportConfig) {
+        var _origOnload = reportConfig.onload;
+        var _origRefresh = reportConfig.refresh;
+        var _origAfterRender = reportConfig.after_datatable_render;
 
-                var orig = frappe.query_reports[REPORT_NAME];
-                var originalOnload = orig.onload;
-                var originalRefresh = orig.refresh;
+        reportConfig.formatter = function (value, row, column, data, df) {
+            return frappe.armada.currency_formatter(value, row, column, data, df, 0);
+        };
 
-                orig.formatter = function (value, row, column, data, df) {
-                    return frappe.armada.currency_formatter(
-                        value, row, column, data, df, 0
-                    );
-                };
+        reportConfig.onload = function (report) {
+            if (_origOnload) _origOnload.call(this, report);
+            setTimeout(function () {
+                _inject_button(report);
+                frappe.armada.round_summary();
+            }, 300);
+        };
 
-                orig.onload = function (report) {
-                    if (originalOnload) originalOnload.call(this, report);
-                    setTimeout(function () {
-                        _inject_button(report);
-                        _round_summary();
-                    }, 300);
-                };
+        reportConfig.refresh = function (report) {
+            if (_origRefresh) _origRefresh.call(this, report);
+            setTimeout(function () {
+                _inject_button(report);
+                frappe.armada.round_summary();
+            }, 500);
+        };
 
-                orig.refresh = function (report) {
-                    if (originalRefresh) originalRefresh.call(this, report);
-                    setTimeout(function () {
-                        _inject_button(report);
-                        _round_summary();
-                    }, 500);
-                };
-
-                orig.after_datatable_render = function () {
-                    setTimeout(_round_summary, 200);
-                };
-            }
-        }, 100);
+        reportConfig.after_datatable_render = function (datatable) {
+            if (_origAfterRender) _origAfterRender.call(this, datatable);
+            setTimeout(frappe.armada.round_summary, 200);
+        };
     });
+
 })();
