@@ -15,67 +15,41 @@ CATEGORY_MAP = {
     "Перемещения": "transfer",
 }
 
+CATEGORY_LABELS = {
+    "customer": "Покупатели",
+    "supplier": "Поставщики",
+    "expense": "Расходы",
+    "dividend": "Дивиденды",
+    "employee": "Сотрудники",
+    "transfer": "Перемещения",
+    "other": "Прочие",
+}
+
 
 def execute(filters=None):
     columns = get_columns()
-    data = get_data(filters)
-    summary_html = get_summary_html(data)
+    data, expense_summaries = get_data(filters)
+    summary_html = get_summary_html(data, expense_summaries)
     return columns, data, summary_html
 
 
 def get_columns():
     return [
-        {
-            "fieldname": "posting_date",
-            "label": _("Сана"),
-            "fieldtype": "Date",
-            "width": 100
-        },
-        {
-            "fieldname": "voucher_type",
-            "label": _("Тип"),
-            "fieldtype": "Data",
-            "width": 0,
-            "hidden": 1
-        },
-        {
-            "fieldname": "voucher_no",
-            "label": _("Документ"),
-            "fieldtype": "Dynamic Link",
-            "options": "voucher_type",
-            "width": 180
-        },
-        {
-            "fieldname": "description",
-            "label": _("Контрагент / Изоҳ"),
-            "fieldtype": "Data",
-            "width": 280
-        },
-        {
-            "fieldname": "kirim",
-            "label": _("Кирим"),
-            "fieldtype": "Currency",
-            "width": 130
-        },
-        {
-            "fieldname": "chiqim",
-            "label": _("Чиқим"),
-            "fieldtype": "Currency",
-            "width": 130
-        },
-        {
-            "fieldname": "balance",
-            "label": _("Қолдиқ"),
-            "fieldtype": "Currency",
-            "width": 130
-        },
+        {"fieldname": "posting_date", "label": _("Сана"), "fieldtype": "Date", "width": 100},
+        {"fieldname": "account", "label": _("Касса счёт"), "fieldtype": "Link", "options": "Account", "width": 180},
+        {"fieldname": "direction", "label": _("Кирим/Чиқим"), "fieldtype": "Data", "width": 100},
+        {"fieldname": "description", "label": _("Категория"), "fieldtype": "Data", "width": 250},
+        {"fieldname": "summa", "label": _("Сумма"), "fieldtype": "Currency", "width": 130},
+        {"fieldname": "remarks", "label": _("Изоҳ"), "fieldtype": "Data", "width": 200},
+        {"fieldname": "voucher_type", "label": _("Тип"), "fieldtype": "Data", "width": 0, "hidden": 1},
+        {"fieldname": "voucher_no", "label": _("Документ"), "fieldtype": "Dynamic Link", "options": "voucher_type", "width": 160},
     ]
 
 
 def get_data(filters):
     cash_accounts = get_cash_accounts(filters)
     if not cash_accounts:
-        return []
+        return [], {}
 
     opening_balance = get_opening_balance(cash_accounts, filters)
     transactions = get_transactions(cash_accounts, filters)
@@ -85,6 +59,7 @@ def get_data(filters):
 
     pe_info = get_payment_entry_info_batch(pe_vouchers)
     je_info = get_journal_entry_info_batch(je_vouchers)
+    je_remarks = get_journal_entry_remarks_batch(je_vouchers)
 
     data = []
 
@@ -99,7 +74,6 @@ def get_data(filters):
     total_kirim = 0
     total_chiqim = 0
 
-    # 1-qadam: Tranzaksiyalarni qayta ishlash va xarajatlarni guruhlash
     for row in transactions:
         kirim = flt(row.debit_in_account_currency)
         chiqim = flt(row.credit_in_account_currency)
@@ -133,58 +107,26 @@ def get_data(filters):
 
         data.append({
             "posting_date": row.posting_date,
+            "account": row.account,
+            "direction": "Кирим" if kirim else "Чиқим",
+            "description": info["description"],
+            "category": info["category"],
+            "summa": kirim if kirim else chiqim,
+            "remarks": get_remarks(row, pe_info, je_remarks),
             "voucher_type": row.voucher_type,
             "voucher_no": row.voucher_no,
-            "description": info["description"],
             "kirim": kirim,
             "chiqim": chiqim,
-            "balance": balance,
-            "category": info["category"],
         })
 
-    # 2-qadam: Summary qatorlarni tayyorlash
-    summary_rows = []
-    if category_filter_val == "Расходы" and expense_summaries:
-        for desc, totals in expense_summaries.items():
-            if totals["kirim"] or totals["chiqim"]:
-                summary_rows.append({
-                    "description": f"<b>ИТОГО: {desc}</b>",
-                    "kirim": totals["kirim"],
-                    "chiqim": totals["chiqim"],
-                    "is_total": 1,
-                    "indent": 1
-                })
+    final_data = list(data)
 
-    # 3-qadam: Yakuniy data ro'yxatini yig'ish (Opening Balance + Summary + Transactions)
-    final_data = []
-    final_data.append({
-        "posting_date": None,
-        "voucher_type": None,
-        "voucher_no": None,
-        "description": _("Нач. остаток"),
-        "kirim": 0,
-        "chiqim": 0,
-        "balance": opening_balance,
-        "is_opening": 1,
-    })
+    # opening_balance va closing balance ni summary HTML uchun saqlash
+    if final_data:
+        final_data[0]["_opening_balance"] = opening_balance
+        final_data[-1]["_closing_balance"] = balance
 
-    if summary_rows:
-        final_data.extend(summary_rows)
-    
-    final_data.extend(data)
-
-    final_data.append({
-        "posting_date": None,
-        "voucher_type": None,
-        "voucher_no": None,
-        "description": "<b>ИТОГО</b>",
-        "kirim": total_kirim,
-        "chiqim": total_chiqim,
-        "balance": balance,
-        "is_total": 1,
-    })
-
-    return final_data
+    return final_data, expense_summaries
 
 
 def get_cash_accounts(filters):
@@ -243,7 +185,7 @@ def get_payment_entry_info_batch(voucher_nos):
         return {}
 
     entries = frappe.db.sql("""
-        SELECT name, party_type, party, payment_type
+        SELECT name, party_type, party, payment_type, remarks
         FROM `tabPayment Entry`
         WHERE name IN %s
     """, (voucher_nos,), as_dict=True)
@@ -267,6 +209,27 @@ def get_journal_entry_info_batch(voucher_nos):
     for e in entries:
         result.setdefault(e.parent, []).append(e)
     return result
+
+
+def get_journal_entry_remarks_batch(voucher_nos):
+    if not voucher_nos:
+        return {}
+
+    entries = frappe.db.sql("""
+        SELECT name, user_remark
+        FROM `tabJournal Entry`
+        WHERE name IN %s
+    """, (voucher_nos,), as_dict=True)
+
+    return {e.name: (e.user_remark or "") for e in entries}
+
+
+def get_remarks(row, pe_info, je_remarks):
+    if row.voucher_type == "Payment Entry" and row.voucher_no in pe_info:
+        return pe_info[row.voucher_no].get("remarks") or ""
+    if row.voucher_type == "Journal Entry" and row.voucher_no in je_remarks:
+        return je_remarks[row.voucher_no] or ""
+    return ""
 
 
 def resolve_transaction_info(row, pe_info, je_info, cash_accounts):
@@ -351,17 +314,22 @@ def get_party_name(party_type, party):
     return party
 
 
-def get_summary_html(data):
-    if not data or len(data) <= 1:
+def get_summary_html(data, expense_summaries=None):
+    if not data:
         return ""
 
+    # Opening va closing balancelarni data dan olish
     opening = 0
-    closing = 0
+    closing_balance = 0
+    for row in data:
+        if "_opening_balance" in row:
+            opening = flt(row["_opening_balance"])
+        if "_closing_balance" in row:
+            closing_balance = flt(row["_closing_balance"])
 
-    # Har bir kategoriya uchun IKKI TOMONI ham track qilinadi
     customer_kirim = 0
-    customer_chiqim = 0  # BUG FIX: avval bu yo'q edi
-    supplier_kirim = 0   # BUG FIX: avval bu yo'q edi
+    customer_chiqim = 0
+    supplier_kirim = 0
     supplier_chiqim = 0
     expense_kirim = 0
     expense_chiqim = 0
@@ -375,12 +343,7 @@ def get_summary_html(data):
     other_chiqim = 0
 
     for row in data:
-        if row.get("is_opening"):
-            opening = flt(row.get("balance"))
-            continue
         if row.get("is_total"):
-            # Closing = ИТОГО qatoridagi balance (detail bilan har doim mos keladi)
-            closing = flt(row.get("balance"))
             continue
 
         category = row.get("category") or "other"
@@ -409,11 +372,40 @@ def get_summary_html(data):
             other_kirim += kirim
             other_chiqim += chiqim
 
+    closing = opening + (customer_kirim + supplier_kirim + expense_kirim + dividend_kirim + transfer_kirim + employee_kirim + other_kirim) - (customer_chiqim + supplier_chiqim + expense_chiqim + dividend_chiqim + transfer_chiqim + employee_chiqim + other_chiqim)
+    if closing_balance:
+        closing = closing_balance
+
     def fmt(val):
         return f"{flt(val):,.2f}"
 
     def dash_or_val(val):
         return "—" if flt(val) == 0 else f"<span style='color: inherit;'>{fmt(val)}</span>"
+
+    # Расходы subcategory qatorlarini tayyorlash
+    expense_sub_rows = ""
+    if expense_summaries:
+        for desc, totals in expense_summaries.items():
+            display_name = desc.replace("Расходы: ", "") if desc.startswith("Расходы: ") else desc
+            sub_kirim = fmt(totals["kirim"]) if totals["kirim"] else "—"
+            sub_chiqim = fmt(totals["chiqim"]) if totals["chiqim"] else "—"
+            expense_sub_rows += f"""
+                <tr class="dds-expense-sub" style="display: none; background-color: #fff8e1;">
+                    <td style="padding: 8px 10px 8px 30px; border: 1px solid #ddd; font-style: italic;">{display_name}</td>
+                    <td style="padding: 8px 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{sub_kirim}</td>
+                    <td style="padding: 8px 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{sub_chiqim}</td>
+                </tr>"""
+
+    expense_arrow = '<span id="dds-expense-arrow" style="margin-right: 5px; font-size: 10px;">&#9654;</span>' if expense_summaries else ""
+    expense_cursor = "cursor: pointer;" if expense_summaries else ""
+    expense_onclick = """onclick="(function(){
+        var rows = document.querySelectorAll('.dds-expense-sub');
+        var arrow = document.getElementById('dds-expense-arrow');
+        if (!rows.length) return;
+        var visible = rows[0].style.display !== 'none';
+        for (var i = 0; i < rows.length; i++) { rows[i].style.display = visible ? 'none' : 'table-row'; }
+        arrow.innerHTML = visible ? '&#9654;' : '&#9660;';
+    })()" """ if expense_summaries else ""
 
     html = f"""
     <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px;">
@@ -441,30 +433,31 @@ def get_summary_html(data):
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(supplier_chiqim) if supplier_chiqim else '—'}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border: 1px solid #ddd;">Расходы</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(expense_kirim) if expense_kirim else '—'}</td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(expense_chiqim) if expense_chiqim else '—'}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
                     <td style="padding: 10px; border: 1px solid #ddd;">Дивиденды</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(dividend_kirim) if dividend_kirim else '—'}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(dividend_chiqim) if dividend_chiqim else '—'}</td>
                 </tr>
-                <tr>
+                <tr style="background-color: #fafafa;">
                     <td style="padding: 10px; border: 1px solid #ddd;">Сотрудники</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(employee_kirim) if employee_kirim else '—'}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(employee_chiqim) if employee_chiqim else '—'}</td>
                 </tr>
-                <tr style="background-color: #fafafa;">
+                <tr>
                     <td style="padding: 10px; border: 1px solid #ddd;">Перемещения</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(transfer_kirim) if transfer_kirim else '—'}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(transfer_chiqim) if transfer_chiqim else '—'}</td>
                 </tr>
-                <tr>
+                <tr style="background-color: #fafafa;">
                     <td style="padding: 10px; border: 1px solid #ddd;">Прочие</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(other_kirim) if other_kirim else '—'}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(other_chiqim) if other_chiqim else '—'}</td>
                 </tr>
+                <tr style="{expense_cursor}" {expense_onclick}>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{expense_arrow}Расходы</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #388e3c;">{fmt(expense_kirim) if expense_kirim else '—'}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #d32f2f;">{fmt(expense_chiqim) if expense_chiqim else '—'}</td>
+                </tr>
+                {expense_sub_rows}
                 <tr style="background-color: #e3f2fd; font-weight: bold;">
                     <td style="padding: 12px; border: 1px solid #ddd; font-weight: bold;">Конечный остаток</td>
                     <td style="padding: 12px; border: 1px solid #ddd; text-align: right; font-weight: bold;" colspan="2">{fmt(closing)}</td>

@@ -53,10 +53,6 @@ frappe.query_reports["DDS"] = {
             value = value.replace(/\$/g, '');
         }
 
-        if (data && (data.is_opening || data.is_total)) {
-            value = `<span style="font-weight: bold;">${value}</span>`;
-        }
-
         return value;
     }
 }
