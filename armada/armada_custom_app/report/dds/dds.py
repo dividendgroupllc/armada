@@ -109,7 +109,7 @@ def get_data(filters):
             "posting_date": row.posting_date,
             "account": row.account,
             "direction": "Кирим" if kirim else "Чиқим",
-            "description": info["description"],
+            "description": strip_category_prefix(info["description"]),
             "category": info["category"],
             "summa": kirim if kirim else chiqim,
             "remarks": get_remarks(row, pe_info, je_remarks),
@@ -230,6 +230,13 @@ def get_remarks(row, pe_info, je_remarks):
     if row.voucher_type == "Journal Entry" and row.voucher_no in je_remarks:
         return je_remarks[row.voucher_no] or ""
     return ""
+
+
+def strip_category_prefix(desc):
+    for prefix in ("Расходы: ", "Дивиденды: "):
+        if desc.startswith(prefix):
+            return desc[len(prefix):]
+    return desc
 
 
 def resolve_transaction_info(row, pe_info, je_info, cash_accounts):

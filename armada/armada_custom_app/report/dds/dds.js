@@ -53,6 +53,14 @@ frappe.query_reports["DDS"] = {
             value = value.replace(/\$/g, '');
         }
 
+        if (column.fieldname == "summa" && data) {
+            if (data.direction == "Кирим") {
+                value = `<span style="color: #388e3c;">${value}</span>`;
+            } else if (data.direction == "Чиқим") {
+                value = `<span style="color: #d32f2f;">${value}</span>`;
+            }
+        }
+
         return value;
     }
 }

@@ -3,6 +3,13 @@
 
 frappe.ui.form.on("Kassa", {
     refresh: function(frm) {
+        // Linked document button
+        if (frm.doc.docstatus == 1 && frm.doc.linked_entry) {
+            frm.add_custom_button(frm.doc.linked_entry, function() {
+                frappe.set_route("Form", frm.doc.linked_doctype, frm.doc.linked_entry);
+            }, __("Связанный документ"));
+        }
+
         // Set expense account query
         frm.set_query("expense_account", function() {
             return {
