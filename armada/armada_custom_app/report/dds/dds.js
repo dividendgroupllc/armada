@@ -55,9 +55,9 @@ frappe.query_reports["DDS"] = {
 
         if (column.fieldname == "summa" && data) {
             if (data.direction == "Кирим") {
-                value = `<span style="color: #388e3c;">${value}</span>`;
+                value = `<span style="color: #1b5e20; font-weight: 600;">${value}</span>`;
             } else if (data.direction == "Чиқим") {
-                value = `<span style="color: #d32f2f;">${value}</span>`;
+                value = `<span style="color: #b71c1c; font-weight: 600;">${value}</span>`;
             }
         }
 
