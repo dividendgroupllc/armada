@@ -15,6 +15,7 @@ class Kassa(Document):
         self.set_party_currency()
         self.set_balance()
         self.validate_party()
+        self.validate_transaction_rules()
         self.validate_transfer()
         self.validate_amount()
         self.validate_currency()
@@ -151,8 +152,45 @@ class Kassa(Document):
                 "name"
             )
 
+    def validate_transaction_rules(self):
+        """Specific transaction type and party type combinations."""
+        if self.transaction_type == "Приход" and self.party_type == "Дивиденд":
+            frappe.throw(_("Тип контрагента Дивиденд разрешен только для операции Расход"))
+
+    def append_cash_counterparty_rows(self, je, counterparty_account, counterparty_values=None):
+        """Append balanced cash/counterparty rows based on transaction direction."""
+        amount = flt(self.amount)
+        cash_values = {"account": self.cash_account}
+        counterparty_row = {"account": counterparty_account}
+        counterparty_row.update(counterparty_values or {})
+
+        if self.transaction_type == "Приход":
+            cash_values.update({
+                "debit_in_account_currency": amount,
+                "debit": amount,
+            })
+            counterparty_row.update({
+                "credit_in_account_currency": amount,
+                "credit": amount,
+            })
+        else:
+            cash_values.update({
+                "credit_in_account_currency": amount,
+                "credit": amount,
+            })
+            counterparty_row.update({
+                "debit_in_account_currency": amount,
+                "debit": amount,
+            })
+
+        je.append("accounts", cash_values)
+        je.append("accounts", counterparty_row)
+
     def create_dividend_journal_entry(self):
         """Dividend uchun Journal Entry yaratish (3200 accountga)"""
+        if self.transaction_type == "Приход":
+            frappe.throw(_("Тип контрагента Дивиденд разрешен только для операции Расход"))
+
         # Get dividend account (3200)
         dividend_account = frappe.db.get_value("Account",
             {"company": self.company, "account_number": "3200", "is_group": 0}, "name")
@@ -166,21 +204,9 @@ class Kassa(Document):
         je.company = self.company
         je.cheque_no = self.name
         je.cheque_date = self.date
-        je.user_remark = self.remarks or f"Dividend payment from {self.name}"
+        je.user_remark = self.remarks or f"Dividend journal for {self.name}"
 
-        # Credit cash account
-        je.append("accounts", {
-            "account": self.cash_account,
-            "credit_in_account_currency": flt(self.amount),
-            "credit": flt(self.amount)
-        })
-
-        # Debit dividend account
-        je.append("accounts", {
-            "account": dividend_account,
-            "debit_in_account_currency": flt(self.amount),
-            "debit": flt(self.amount)
-        })
+        self.append_cash_counterparty_rows(je, dividend_account)
 
         je.flags.ignore_permissions = True
         je.insert()
@@ -211,21 +237,10 @@ class Kassa(Document):
         je.company = self.company
         je.cheque_no = self.name
         je.cheque_date = self.date
-        je.user_remark = self.remarks or f"Expense payment from {self.name}"
+        je.user_remark = self.remarks or f"Expense journal for {self.name}"
 
-        # Credit cash account
-        je.append("accounts", {
-            "account": self.cash_account,
-            "credit_in_account_currency": flt(self.amount),
-            "credit": flt(self.amount)
-        })
-
-        # Debit expense account
-        je.append("accounts", {
-            "account": self.expense_account,
+        self.append_cash_counterparty_rows(je, self.expense_account, {
             "cost_center": cost_center,
-            "debit_in_account_currency": flt(self.amount),
-            "debit": flt(self.amount)
         })
 
         je.flags.ignore_permissions = True
@@ -514,5 +529,4 @@ def get_expense_accounts(doctype, txt, searchfield, start, page_len, filters):
         "start": start,
         "page_len": page_len
     })
-
 

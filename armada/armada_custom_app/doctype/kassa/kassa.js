@@ -39,6 +39,7 @@ frappe.ui.form.on("Kassa", {
 
         // Update balance label based on transaction type
         frm.trigger("update_balance_label");
+        frm.trigger("update_party_type_options");
 
         // Update sub-account options on load
         if (frm.doc.expense_account) {
@@ -125,6 +126,7 @@ frappe.ui.form.on("Kassa", {
         // Set queries
         frm.trigger("set_mode_of_payment_query");
         frm.trigger("set_mode_of_payment_to_query");
+        frm.trigger("update_party_type_options");
 
         // For Перемещения, set default company if not set
         if (frm.doc.transaction_type === "Перемещения" && !frm.doc.company) {
@@ -213,7 +215,24 @@ frappe.ui.form.on("Kassa", {
         frm.refresh_field("balance");
     },
 
+    update_party_type_options: function(frm) {
+        let options = ["", "Customer", "Supplier", "Shareholder", "Employee", "Расходы"];
+
+        if (frm.doc.transaction_type !== "Приход") {
+            options.push("Дивиденд");
+        }
+
+        frm.set_df_property("party_type", "options", options.join("\n"));
+        frm.refresh_field("party_type");
+
+        if (frm.doc.docstatus === 0 && frm.doc.transaction_type === "Приход" && frm.doc.party_type === "Дивиденд") {
+            frm.set_value("party_type", "");
+            frappe.msgprint(__("Тип контрагента Дивиденд разрешен только для операции Расход."));
+        }
+    },
+
     party_type: function(frm) {
+        frm.trigger("validate_dividend_transaction");
         frm.set_value("party", "");
         frm.set_value("expense_account", "");
         frm.set_value("party_name", "");
@@ -329,6 +348,24 @@ frappe.ui.form.on("Kassa", {
                 });
             }
         }
+    },
+
+    validate_dividend_transaction: function(frm) {
+        if (frm.doc.transaction_type === "Приход" && frm.doc.party_type === "Дивиденд") {
+            frappe.validated = false;
+            frappe.msgprint({
+                title: __("Неверная комбинация"),
+                indicator: "red",
+                message: __("Тип контрагента Дивиденд разрешен только для операции Расход.")
+            });
+            if (frm.doc.docstatus === 0) {
+                frm.set_value("party_type", "");
+            }
+        }
+    },
+
+    validate: function(frm) {
+        frm.trigger("validate_dividend_transaction");
     }
 });
 
