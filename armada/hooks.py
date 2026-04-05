@@ -8,7 +8,7 @@ app_license = "mit"
 # Fixtures
 fixtures = [
     {"dt": "Custom Field", "filters": [
-        ["dt", "in", ("Stock Entry", "Item", "Kassa")],
+        ["dt", "in", ("Stock Entry", "Item", "Kassa", "Sales Invoice")],
         ["fieldname", "in", (
             "custom_production_entry",
             "armada_category_section",
@@ -16,7 +16,8 @@ fixtures = [
             "segment",
             "product_type",
             "standard",
-            "custom_sub_account_name"
+            "custom_sub_account_name",
+            "custom_auto_created_from_sales_order"
         )]
     ]},
     "Account Name Mapping",
@@ -26,6 +27,10 @@ fixtures = [
 # Apps
 # ------------------
 doc_events = {
+    "Sales Order": {
+        "on_submit": "armada.armada_custom_app.events.sales_order.on_sales_order_submit",
+        "before_cancel": "armada.armada_custom_app.events.sales_order.before_sales_order_cancel",
+    },
     "Cash Flow Categories": {
         "on_update": "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
         "on_trash":  "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
@@ -295,4 +300,3 @@ scheduler_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
