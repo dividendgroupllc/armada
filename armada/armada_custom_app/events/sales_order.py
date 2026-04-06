@@ -41,6 +41,11 @@ def before_sales_order_cancel(doc, method=None):
         sales_invoice.flags.ignore_permissions = True
         sales_invoice.cancel()
 
+    for (dn_name,) in get_linked_delivery_notes(doc.name, docstatus=1):
+        delivery_note = frappe.get_doc("Delivery Note", dn_name)
+        delivery_note.flags.ignore_permissions = True
+        delivery_note.cancel()
+
 
 def get_linked_sales_invoices(sales_order_name, docstatus=None, auto_created_only=False):
     conditions = ["sii.sales_order = %(sales_order)s", "si.docstatus < 2"]
@@ -66,6 +71,21 @@ def get_linked_sales_invoices(sales_order_name, docstatus=None, auto_created_onl
         """,
         filters,
         as_dict=True,
+    )
+
+
+def get_linked_delivery_notes(sales_order_name, docstatus=1):
+    return frappe.db.sql(
+        """
+        SELECT DISTINCT dn.name
+        FROM `tabDelivery Note` dn
+        INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+        WHERE dni.against_sales_order = %(sales_order)s
+            AND dn.docstatus = %(docstatus)s
+        ORDER BY dn.creation ASC
+        """,
+        {"sales_order": sales_order_name, "docstatus": docstatus},
+        as_list=True,
     )
 
 
