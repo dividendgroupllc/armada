@@ -10,7 +10,7 @@ def execute(filters=None):
 
     summary_html = get_summary_html(data, filters)
 
-    return columns, data, summary_html, None, None
+    return columns, data, summary_html
 
 
 def format_balance(value):
