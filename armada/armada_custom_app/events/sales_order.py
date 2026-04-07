@@ -27,6 +27,12 @@ def on_sales_order_submit(doc, method=None):
     if not sales_invoice.get("items"):
         frappe.throw(_("No invoiceable items found for Sales Order {0}").format(doc.name))
 
+    if doc.transaction_date:
+        sales_invoice.posting_date = doc.transaction_date
+        sales_invoice.set_posting_time = 1
+        if hasattr(sales_invoice, "due_date"):
+            sales_invoice.due_date = None
+
     sales_invoice.set(AUTO_CREATED_FIELD, 1)
     sales_invoice.flags.ignore_permissions = True
     sales_invoice.insert()
