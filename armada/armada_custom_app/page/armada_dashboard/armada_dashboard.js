@@ -868,6 +868,7 @@ class ArmadaDashboard {
 	}
 
 	update_sales_kpis(data) {
+		this._sales_kpis = data || {};
 		$('#sold-qty').text(data.sold_qty || 0);
 		$('#sold-change').text(`↓ ${Math.abs(data.sold_change || 0).toFixed(1)}%`);
 		$('#sales-amount').text(this.format_currency(data.sales_amount || 0));
@@ -876,6 +877,12 @@ class ArmadaDashboard {
 		$('#total-margin').text(data.total_margin ? this.format_currency(data.total_margin) : '-');
 		$('#avg-price').text(this.format_currency(data.avg_price || 0));
 		$('#profitability').text(data.profitability ? data.profitability + '%' : '-');
+
+		if (data) {
+			$('#ranking-total-amount').text(this.format_currency(data.sales_amount || 0));
+			$('#ranking-total-cost').text(this.format_currency(data.cost_amount || 0));
+			$('#ranking-total-margin').text(this.format_currency(data.total_margin || 0));
+		}
 	}
 
 	render_sales_dynamics_chart(data) {
@@ -920,6 +927,14 @@ class ArmadaDashboard {
 	}
 
 	render_product_ranking(data) {
+		const totalQty = data.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+		const totalAmount = data.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+		const totalCost = data.reduce((sum, row) => sum + (Number(row.cost) || 0), 0);
+		const totalMargin = data.reduce((sum, row) => sum + (Number(row.margin) || 0), 0);
+		const kpiAmount = this._sales_kpis ? Number(this._sales_kpis.sales_amount || 0) : totalAmount;
+		const kpiCost = this._sales_kpis ? Number(this._sales_kpis.cost_amount || 0) : totalCost;
+		const kpiMargin = this._sales_kpis ? Number(this._sales_kpis.total_margin || 0) : totalMargin;
+
 		let html = `
 			<table class="ranking-table">
 				<thead>
@@ -937,7 +952,8 @@ class ArmadaDashboard {
 		`;
 		
 		data.forEach((row, index) => {
-			const barWidth = (row.amount / data[0].amount) * 100;
+			const maxAmount = data.length ? (Number(data[0].amount) || 0) : 0;
+			const barWidth = maxAmount > 0 ? ((Number(row.amount) || 0) / maxAmount) * 100 : 0;
 			html += `
 				<tr>
 					<td>${index + 1}.</td>
@@ -958,6 +974,17 @@ class ArmadaDashboard {
 		
 		html += `
 				</tbody>
+				<tfoot>
+					<tr>
+						<td></td>
+						<td>Итого</td>
+						<td>${totalQty}</td>
+						<td id="ranking-total-amount">${this.format_currency(kpiAmount)}</td>
+						<td>-</td>
+						<td id="ranking-total-cost">${this.format_currency(kpiCost)}</td>
+						<td id="ranking-total-margin">${this.format_currency(kpiMargin)}</td>
+					</tr>
+				</tfoot>
 			</table>
 		`;
 		
@@ -985,7 +1012,7 @@ class ArmadaDashboard {
 					<td>${row.date}</td>
 					<td>${row.item_name}</td>
 					<td>${row.customer}</td>
-					<td class="${row.qty > 5 ? 'highlight-yellow' : ''}">${row.qty}</td>
+					<td class="${row.qty > 5 ? 'highlight' : ''}">${row.qty}</td>
 					<td class="${row.amount > 1000 ? 'highlight-red' : ''}">${this.format_currency(row.amount)}</td>
 				</tr>
 			`;
@@ -1070,6 +1097,10 @@ class ArmadaDashboard {
 						<div class="kpi-value" id="transfer-income">-</div>
 					</div>
 					<div class="kpi-card">
+						<div class="kpi-label">Текущий остаток наличные</div>
+						<div class="kpi-value" id="current-cash">$0</div>
+					</div>
+					<div class="kpi-card">
 						<div class="kpi-label">Наличный расход</div>
 						<div class="kpi-value negative" id="cash-expense">$0</div>
 						<div class="kpi-change negative" id="cash-expense-change">↓ 0%</div>
@@ -1077,10 +1108,6 @@ class ArmadaDashboard {
 					<div class="kpi-card">
 						<div class="kpi-label">Перечисление расход</div>
 						<div class="kpi-value" id="transfer-expense">-</div>
-					</div>
-					<div class="kpi-card">
-						<div class="kpi-label">Текущий остаток наличные</div>
-						<div class="kpi-value" id="current-cash">$0</div>
 					</div>
 					<div class="kpi-card">
 						<div class="kpi-label">Тек. остаток перечисление</div>
@@ -1412,22 +1439,38 @@ class ArmadaDashboard {
 		let content = `
 			<div class="counterparties-page">
 				<!-- KPI Cards -->
-				<div class="kpi-cards-row">
-					<div class="kpi-card wide">
-						<div class="kpi-label">Задолженность клиентов</div>
-						<div class="kpi-value negative" id="total-customer-debt">$0</div>
+				<div class="kpi-cards-row counterparties-main-kpis">
+					<div class="kpi-column debt-column">
+						<div class="kpi-card debt-card">
+							<div class="kpi-label">Задолженность клиентов</div>
+							<div class="kpi-value negative" id="total-customer-debt">$0</div>
+						</div>
+						<div class="kpi-card debt-card">
+							<div class="kpi-label">Задолженность поставщикам</div>
+							<div class="kpi-value positive" id="total-supplier-debt">$0</div>
+						</div>
 					</div>
-					<div class="kpi-card">
-						<div class="kpi-label">Количество клиентов</div>
-						<div class="kpi-value" id="customer-count">0</div>
+
+					<div class="kpi-column receipts-column">
+						<div class="kpi-card receipt-card">
+							<div class="kpi-label">Поступления от клиентов</div>
+							<div class="kpi-value positive" id="counterparties-customer-receipts">$0</div>
+						</div>
+						<div class="kpi-card receipt-card">
+							<div class="kpi-label">Поступления от поставщиков</div>
+							<div class="kpi-value positive" id="counterparties-supplier-receipts">$0</div>
+						</div>
 					</div>
-					<div class="kpi-card wide">
-						<div class="kpi-label">Задолженность поставщикам</div>
-						<div class="kpi-value positive" id="total-supplier-debt">$0</div>
-					</div>
-					<div class="kpi-card">
-						<div class="kpi-label">Количество поставщиков</div>
-						<div class="kpi-value" id="supplier-count">0</div>
+
+					<div class="kpi-column counts-column">
+						<div class="kpi-card count-card">
+							<div class="kpi-label">Количество клиентов</div>
+							<div class="kpi-value" id="customer-count">0</div>
+						</div>
+						<div class="kpi-card count-card">
+							<div class="kpi-label">Количество поставщиков</div>
+							<div class="kpi-value" id="supplier-count">0</div>
+						</div>
 					</div>
 				</div>
 
@@ -1455,13 +1498,29 @@ class ArmadaDashboard {
 
 	load_counterparties_data() {
 		let me = this;
+		me._counterparties_kpi_data = null;
+		me._main_kpis_for_counterparties = null;
 
 		// Load counterparties KPIs
 		frappe.call({
 			method: 'armada.armada_custom_app.api.dashboard.get_counterparties_kpis',
 			callback: function(r) {
 				if (r.message) {
+					me._counterparties_kpi_data = r.message;
 					me.update_counterparties_kpis(r.message);
+				}
+			}
+		});
+
+		// Pull main page receipts and merge into counterparties creditor view
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_main_kpis',
+			callback: function(r) {
+				if (r.message) {
+					me._main_kpis_for_counterparties = r.message;
+					if (me._counterparties_kpi_data) {
+						me.update_counterparties_kpis(me._counterparties_kpi_data);
+					}
 				}
 			}
 		});
@@ -1488,10 +1547,16 @@ class ArmadaDashboard {
 	}
 
 	update_counterparties_kpis(data) {
+		const mainKpis = this._main_kpis_for_counterparties || {};
+		const customerCreditor = mainKpis.customer_receipts || 0;
+		const supplierCreditor = mainKpis.supplier_receipts || 0;
+
 		$('#total-customer-debt').text(this.format_currency(data.customer_debt || 0));
 		$('#customer-count').text(data.customer_count || 0);
 		$('#total-supplier-debt').text(this.format_currency(data.supplier_debt || 0));
 		$('#supplier-count').text(data.supplier_count || 0);
+		$('#counterparties-customer-receipts').text(this.format_currency(customerCreditor));
+		$('#counterparties-supplier-receipts').text(this.format_currency(supplierCreditor));
 	}
 
 	render_customer_debts(data) {
@@ -1644,10 +1709,6 @@ class ArmadaDashboard {
 						<div class="kpi-value" id="wh-total-value">$0</div>
 					</div>
 					<div class="kpi-card">
-						<div class="kpi-label">Кол-во складов</div>
-						<div class="kpi-value" id="wh-warehouse-count">0</div>
-					</div>
-					<div class="kpi-card">
 						<div class="kpi-label">Кол-во наименований</div>
 						<div class="kpi-value" id="wh-item-count">0</div>
 					</div>
@@ -1728,7 +1789,6 @@ class ArmadaDashboard {
 	update_warehouse_kpis(data) {
 		$('#wh-total-qty').text(Number(data.total_qty || 0).toLocaleString('ru-RU'));
 		$('#wh-total-value').text(this.format_currency(data.total_value || 0));
-		$('#wh-warehouse-count').text(data.warehouse_count || 0);
 		$('#wh-item-count').text(data.item_count || 0);
 	}
 

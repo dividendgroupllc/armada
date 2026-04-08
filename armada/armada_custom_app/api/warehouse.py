@@ -9,7 +9,7 @@ All data from ERPNext standard doctype:
 
 Filters: warehouses (list), item_groups (list), items (list)
 
-KPI cards: Общее кол-во, Общая стоимость, Кол-во складов, Кол-во наименований
+KPI cards: Общее кол-во, Общая стоимость, Кол-во наименований
 Tables:    Остаток по складам, Детальные данные по складу
 """
 
@@ -27,6 +27,8 @@ def _parse_json_list(val):
 		return []
 	if isinstance(val, list):
 		return val
+	if isinstance(val, str) and val and not val.strip().startswith("["):
+		return [val]
 	try:
 		parsed = json.loads(val)
 		if isinstance(parsed, list):
@@ -34,6 +36,15 @@ def _parse_json_list(val):
 		return []
 	except (json.JSONDecodeError, TypeError):
 		return []
+
+
+def _merge_warehouse_filters(warehouses=None, warehouse=None):
+	"""Merge warehouse multi-select and single warehouse inputs into one list."""
+	merged = _parse_json_list(warehouses)
+	if warehouse:
+		merged.extend(_parse_json_list(warehouse))
+	# Keep order but remove duplicates
+	return list(dict.fromkeys([w for w in merged if w]))
 
 
 def _build_bin_filter_sql(warehouses, item_groups, items, bin_alias="b"):
@@ -98,9 +109,9 @@ def get_warehouse_filter_options():
 # ── KPI Cards ───────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_warehouse_kpis(warehouses=None, item_groups=None, items=None):
+def get_warehouse_kpis(warehouses=None, warehouse=None, item_groups=None, items=None):
 	"""Warehouse page KPI strip with optional multi-select filters."""
-	wh_list = _parse_json_list(warehouses)
+	wh_list = _merge_warehouse_filters(warehouses, warehouse)
 	ig_list = _parse_json_list(item_groups)
 	item_list = _parse_json_list(items)
 
@@ -119,27 +130,10 @@ def get_warehouse_kpis(warehouses=None, item_groups=None, items=None):
 		{where}
 	""".format(item_join=item_join, where=where), params, as_dict=True)
 
-	# Warehouse count from tabWarehouse (actual count, not from Bin)
-	if wh_list:
-		placeholders = ", ".join(["%s"] * len(wh_list))
-		wh_count = frappe.db.sql("""
-			SELECT COUNT(*) AS cnt
-			FROM `tabWarehouse`
-			WHERE disabled = 0 AND is_group = 0
-				AND name IN ({placeholders})
-		""".format(placeholders=placeholders), wh_list, as_dict=True)
-	else:
-		wh_count = frappe.db.sql("""
-			SELECT COUNT(*) AS cnt
-			FROM `tabWarehouse`
-			WHERE disabled = 0 AND is_group = 0
-		""", as_dict=True)
-
 	r = result[0] if result else {}
 	return {
 		"total_qty": flt(r.get("total_qty"), 2),
 		"total_value": flt(r.get("total_value"), 2),
-		"warehouse_count": wh_count[0].cnt if wh_count else 0,
 		"item_count": r.get("item_count") or 0,
 	}
 
@@ -147,9 +141,9 @@ def get_warehouse_kpis(warehouses=None, item_groups=None, items=None):
 # ── Остаток по складам (summary table) ──────────────────────────────────────
 
 @frappe.whitelist()
-def get_warehouse_summary(warehouses=None, item_groups=None, items=None):
+def get_warehouse_summary(warehouses=None, warehouse=None, item_groups=None, items=None):
 	"""Stock summary grouped by warehouse."""
-	wh_list = _parse_json_list(warehouses)
+	wh_list = _merge_warehouse_filters(warehouses, warehouse)
 	ig_list = _parse_json_list(item_groups)
 	item_list = _parse_json_list(items)
 
@@ -182,9 +176,9 @@ def get_warehouse_summary(warehouses=None, item_groups=None, items=None):
 # ── Детальные данные по складу (detail table) ────────────────────────────────
 
 @frappe.whitelist()
-def get_warehouse_stock_data(warehouses=None, item_groups=None, items=None):
+def get_warehouse_stock_data(warehouses=None, warehouse=None, item_groups=None, items=None):
 	"""Detailed stock rows from Bin with optional filters."""
-	wh_list = _parse_json_list(warehouses)
+	wh_list = _merge_warehouse_filters(warehouses, warehouse)
 	ig_list = _parse_json_list(item_groups)
 	item_list = _parse_json_list(items)
 

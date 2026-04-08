@@ -47,7 +47,7 @@ def _calc_supplier_debts(from_date=None, to_date=None):
 	data = frappe.db.sql(f"""
 		SELECT
 			gle.party                          AS supplier,
-			SUM(gle.credit_in_account_currency - gle.debit_in_account_currency) AS debt_amount
+			SUM(gle.credit - gle.debit) AS debt_amount
 		FROM `tabGL Entry` gle
 		WHERE gle.is_cancelled   = 0
 			AND gle.party_type   = 'Supplier'
@@ -78,7 +78,7 @@ def _calc_customer_debts(from_date=None, to_date=None):
 	data = frappe.db.sql(f"""
 		SELECT
 			gle.party                          AS customer,
-			SUM(gle.debit_in_account_currency - gle.credit_in_account_currency) AS debt_amount
+			SUM(gle.debit - gle.credit) AS debt_amount
 		FROM `tabGL Entry` gle
 		WHERE gle.is_cancelled   = 0
 			AND gle.party_type   = 'Customer'

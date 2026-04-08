@@ -25,6 +25,7 @@ from armada.armada_custom_app.api.utils import (
 	calculate_change,
 	get_total_sales,
 	get_cash_flow_income,
+	get_cash_flow_supplier_income,
 	get_cash_flow_expense,
 	get_customer_outstanding,
 	get_supplier_outstanding,
@@ -50,6 +51,7 @@ def get_main_kpis(from_date=None, to_date=None):
 
 	customer_receipts = get_cash_flow_income(from_date, to_date)
 	prev_receipts = get_cash_flow_income(prev_from_date, prev_to_date)
+	supplier_receipts = get_cash_flow_supplier_income(from_date, to_date)
 
 	customer_debt = get_customer_outstanding(from_date, to_date)
 	supplier_debt = get_supplier_outstanding(from_date, to_date)
@@ -63,6 +65,7 @@ def get_main_kpis(from_date=None, to_date=None):
 		"total_sales": total_sales,
 		"sales_change": calculate_change(total_sales, prev_sales),
 		"customer_receipts": customer_receipts,
+		"supplier_receipts": supplier_receipts,
 		"receipts_change": calculate_change(customer_receipts, prev_receipts),
 		"customer_debt": customer_debt,
 		"supplier_debt": supplier_debt,

@@ -229,6 +229,7 @@ def get_product_ranking(from_date=None, to_date=None,
 	i_names = _parse_json_list(item_names)
 	i_groups = _parse_json_list(item_groups)
 	custs = _parse_json_list(customers)
+	has_filters = bool(i_names or i_groups or custs)
 
 	prev_from_date = add_months(from_date, -1)
 	prev_to_date = add_months(to_date, -1)
@@ -267,9 +268,25 @@ def get_product_ranking(from_date=None, to_date=None,
 		[prev_from_date, prev_to_date] + fparams + item_codes, as_dict=True)
 	prev_map = {r.item_code: flt(r.amount) for r in prev_rows}
 
+	row_cost_total = flt(sum(flt(r.cost) for r in data), 6)
+	target_cost_total = row_cost_total
+	if not has_filters:
+		gl_cost = frappe.db.sql("""
+			SELECT SUM(gle.debit - gle.credit)
+			FROM `tabGL Entry` gle
+			WHERE gle.is_cancelled = 0
+				AND gle.account = %s
+				AND gle.posting_date BETWEEN %s AND %s
+		""", ("5111 - Cost of Goods Sold - AM", from_date, to_date))
+		target_cost_total = flt(gl_cost[0][0], 6) if gl_cost and gl_cost[0][0] else 0
+
+	scale_factor = 1
+	if row_cost_total:
+		scale_factor = target_cost_total / row_cost_total
+
 	result = []
 	for r in data:
-		cost = flt(r.cost, 2)
+		cost = flt(flt(r.cost) * scale_factor, 2)
 		amt = flt(r.amount, 2)
 		result.append({
 			"item_code": r.item_code or "",
