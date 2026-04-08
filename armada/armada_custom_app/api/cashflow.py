@@ -30,7 +30,7 @@ from armada.armada_custom_app.api.utils import (
 	get_cash_income_by_method,
 	get_cash_expense_by_method,
 	get_cash_balance,
-	get_transfer_balance,
+	get_cash_balance_by_method,
 	get_smart_date_range,
 )
 
@@ -176,8 +176,8 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 			"cash_expense": cur_kpi["cash_expense"],
 			"cash_expense_change": calculate_change(cur_kpi["cash_expense"], prev_kpi["cash_expense"]),
 			"transfer_expense": cur_kpi["transfer_expense"],
-			"current_cash": get_cash_balance(to_date),
-			"current_transfer": get_transfer_balance(to_date),
+			"current_cash": get_cash_balance_by_method(to_date, "Наличные"),
+			"current_transfer": get_cash_balance_by_method(to_date, "Перечисление"),
 		}
 		return data
 
@@ -187,14 +187,8 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 	cash_expense = get_cash_expense_by_method(from_date, to_date, "Наличные")
 	prev_cash_expense = get_cash_expense_by_method(prev_from_date, prev_to_date, "Наличные")
 
-	transfer_income = (
-		get_cash_income_by_method(from_date, to_date, "Клик")
-		+ get_cash_income_by_method(from_date, to_date, "Перечисление")
-	)
-	transfer_expense = (
-		get_cash_expense_by_method(from_date, to_date, "Клик")
-		+ get_cash_expense_by_method(from_date, to_date, "Перечисление")
-	)
+	transfer_income = get_cash_income_by_method(from_date, to_date, "Перечисление")
+	transfer_expense = get_cash_expense_by_method(from_date, to_date, "Перечисление")
 
 	data = {
 		"cash_income": cash_income,
@@ -203,8 +197,8 @@ def get_cashflow_kpis(from_date=None, to_date=None,
 		"cash_expense": cash_expense,
 		"cash_expense_change": calculate_change(cash_expense, prev_cash_expense),
 		"transfer_expense": transfer_expense,
-		"current_cash": get_cash_balance(to_date),
-		"current_transfer": get_transfer_balance(to_date),
+		"current_cash": get_cash_balance_by_method(to_date, "Наличные"),
+		"current_transfer": get_cash_balance_by_method(to_date, "Перечисление"),
 	}
 
 	return data
@@ -216,11 +210,11 @@ def _get_filtered_cashflow_kpis(from_date, to_date, where, params):
 		SELECT
 			SUM(CASE WHEN pe.payment_type='Receive' AND pe.mode_of_payment='Наличные'
 				THEN pe.paid_amount ELSE 0 END) AS cash_income,
-			SUM(CASE WHEN pe.payment_type='Receive' AND pe.mode_of_payment IN ('Клик','Перечисление')
+			SUM(CASE WHEN pe.payment_type='Receive' AND pe.mode_of_payment='Перечисление'
 				THEN pe.paid_amount ELSE 0 END) AS transfer_income,
 			SUM(CASE WHEN pe.payment_type='Pay' AND pe.mode_of_payment='Наличные'
 				THEN pe.paid_amount ELSE 0 END) AS cash_expense,
-			SUM(CASE WHEN pe.payment_type='Pay' AND pe.mode_of_payment IN ('Клик','Перечисление')
+			SUM(CASE WHEN pe.payment_type='Pay' AND pe.mode_of_payment='Перечисление'
 				THEN pe.paid_amount ELSE 0 END) AS transfer_expense
 		FROM `tabPayment Entry` pe
 		WHERE pe.docstatus = 1 AND pe.posting_date BETWEEN %s AND %s

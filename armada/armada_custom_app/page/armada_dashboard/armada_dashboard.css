@@ -563,11 +563,19 @@ body[data-route="armada-dashboard"] .container.page-body {
     .kpi-cards-row {
         grid-template-columns: repeat(3, 1fr);
     }
+
+    .counterparties-page .counterparties-main-kpis {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.78fr) !important;
+    }
 }
 
 @media (max-width: 1200px) {
     .kpi-cards-row {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    .counterparties-page .counterparties-main-kpis {
+        grid-template-columns: 1fr !important;
     }
 }
 
@@ -607,6 +615,93 @@ body[data-route="armada-dashboard"] .container.page-body {
     grid-column: span 2;
 }
 
+.counterparties-page .counterparties-main-kpis {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.78fr);
+    align-items: stretch;
+}
+
+.counterparties-page .counterparties-main-kpis .kpi-column {
+    display: grid;
+    gap: var(--space-xl);
+}
+
+.counterparties-page .counterparties-main-kpis .debt-card,
+.counterparties-page .counterparties-main-kpis .receipt-card {
+    min-height: 114px;
+}
+
+.counterparties-page .counterparties-main-kpis .count-card {
+    min-height: 114px;
+    padding: var(--space-xl);
+}
+
+.counterparties-page .counterparties-main-kpis .receipt-card .kpi-value {
+    font-size: 30px;
+}
+
+.counterparties-page .counterparties-main-kpis .kpi-column .kpi-card {
+    margin-bottom: 0;
+}
+.counterparties-kpi-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: var(--space-2xl);
+    margin-bottom: var(--space-3xl);
+    align-items: stretch;
+}
+
+.counterparties-kpi-group {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-xl);
+}
+
+.counterparties-page .counterparties-kpi-group .kpi-card.wide {
+    grid-column: auto;
+}
+
+.counterparties-kpi-divider {
+    min-width: 120px;
+    padding: var(--space-lg) var(--space-md);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+}
+
+.counterparties-kpi-divider .divider-line {
+    width: 1px;
+    height: 40px;
+    background: linear-gradient(180deg, transparent, var(--border-color), transparent);
+}
+
+.counterparties-kpi-divider .divider-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    color: var(--color-secondary);
+    text-transform: uppercase;
+}
+
+.counterparties-page .counterparty-card.customer-debtor {
+    border-left: 3px solid var(--color-accent-red);
+}
+
+.counterparties-page .counterparty-card.customer-count-card {
+    border-left: 3px solid var(--color-accent-blue);
+}
+
+.counterparties-page .counterparty-card.supplier-creditor {
+    border-left: 3px solid var(--color-accent-green);
+}
+
+.counterparties-page .counterparty-card.supplier-count-card {
+    border-left: 3px solid var(--color-accent-purple);
+}
+
 .kpi-label {
     color: var(--color-secondary);
     font-size: 11px;
@@ -631,6 +726,26 @@ body[data-route="armada-dashboard"] .container.page-body {
 
 .kpi-value.negative {
     color: var(--color-accent-red);
+}
+
+.armada-dashboard-container.dark-mode .counterparties-page .counterparty-card {
+    border: 1px solid var(--border-color);
+}
+
+.armada-dashboard-container.dark-mode .counterparties-page .counterparty-card.customer-debtor {
+    border-left: 3px solid var(--color-accent-red);
+}
+
+.armada-dashboard-container.dark-mode .counterparties-page .counterparty-card.customer-count-card {
+    border-left: 3px solid var(--color-accent-blue);
+}
+
+.armada-dashboard-container.dark-mode .counterparties-page .counterparty-card.supplier-creditor {
+    border-left: 3px solid var(--color-accent-green);
+}
+
+.armada-dashboard-container.dark-mode .counterparties-page .counterparty-card.supplier-count-card {
+    border-left: 3px solid var(--color-accent-purple);
 }
 
 .kpi-change {
@@ -697,11 +812,11 @@ body[data-route="armada-dashboard"] .container.page-body {
 }
 
 .chart-container.wide {
-    grid-column: span 8;
+    grid-column: span 7;
 }
 
 .chart-container.narrow {
-    grid-column: span 4;
+    grid-column: span 5;
 }
 
 .chart-container.full {
@@ -963,6 +1078,15 @@ td.highlight-red {
     }
 }
 
+@media (max-width: 1700px) and (min-width: 1401px) {
+    .chart-container.wide {
+        grid-column: span 7;
+    }
+    .chart-container.narrow {
+        grid-column: span 5;
+    }
+}
+
 @media (max-width: 1024px) {
     .armada-sidebar {
         width: var(--sidebar-collapsed);
@@ -997,6 +1121,33 @@ td.highlight-red {
     }
     .kpi-card.wide {
         grid-column: span 1;
+    }
+
+    .counterparties-page .counterparties-main-kpis {
+        grid-template-columns: 1fr;
+    }
+
+    .counterparties-page .counterparties-main-kpis .kpi-column {
+        gap: var(--space-lg);
+    }
+    .counterparties-kpi-split {
+        grid-template-columns: 1fr;
+        gap: var(--space-lg);
+    }
+    .counterparties-kpi-divider {
+        min-width: 100%;
+        flex-direction: row;
+        justify-content: center;
+        padding: 0 var(--space-sm);
+    }
+    .counterparties-kpi-divider .divider-line {
+        width: 50px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+    }
+    .counterparties-kpi-divider .divider-label {
+        writing-mode: horizontal-tb;
+        transform: none;
     }
     .filters-row {
         grid-template-columns: 1fr;

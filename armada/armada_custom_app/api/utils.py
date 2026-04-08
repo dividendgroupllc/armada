@@ -48,7 +48,7 @@ def calculate_profitability(sales, cost):
 	"""Return profit margin percentage."""
 	if not sales or sales == 0:
 		return 0
-	return ((sales - cost) / sales) * 100
+	return flt(((sales - cost) / sales) * 100, 2)
 
 
 # ── Sales (Sales Invoice) ──────────────────────────────────────────────────
@@ -64,24 +64,49 @@ def get_total_sales(from_date, to_date):
 
 
 def get_sales_summary(from_date, to_date):
-	"""Sales qty + amount + cost for a period from Sales Invoice + Items."""
-	result = frappe.db.sql("""
-		SELECT
-			SUM(sii.qty) AS qty,
-			SUM(sii.amount) AS amount,
-			SUM(IFNULL(sii.incoming_rate, 0) * sii.qty) AS cost
+	"""Sales qty from SI Items, amount from 4100 group, cost from 5111 (GL)."""
+	qty_result = frappe.db.sql("""
+		SELECT SUM(sii.qty)
 		FROM `tabSales Invoice Item` sii
 		INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 		WHERE si.docstatus = 1 AND si.posting_date BETWEEN %s AND %s
-	""", (from_date, to_date), as_dict=True)
+	""", (from_date, to_date))
+	qty = flt(qty_result[0][0], 0) if qty_result and qty_result[0][0] else 0
 
-	if result and result[0]:
-		return {
-			"qty": flt(result[0].qty, 0),
-			"amount": flt(result[0].amount, 2),
-			"cost": flt(result[0].cost, 2),
-		}
-	return {"qty": 0, "amount": 0, "cost": 0}
+	income_parent = frappe.db.get_value(
+		"Account",
+		{"name": "4100 - Direct Income - AM"},
+		["lft", "rgt"],
+		as_dict=True,
+	)
+
+	amount = 0
+	if income_parent:
+		amount_result = frappe.db.sql("""
+			SELECT SUM(gle.credit - gle.debit)
+			FROM `tabGL Entry` gle
+			INNER JOIN `tabAccount` acc ON acc.name = gle.account
+			WHERE gle.is_cancelled = 0
+				AND acc.is_group = 0
+				AND acc.lft >= %s AND acc.rgt <= %s
+				AND gle.posting_date BETWEEN %s AND %s
+		""", (income_parent.lft, income_parent.rgt, from_date, to_date))
+		amount = flt(amount_result[0][0], 2) if amount_result and amount_result[0][0] else 0
+
+	cost_result = frappe.db.sql("""
+		SELECT SUM(gle.debit - gle.credit)
+		FROM `tabGL Entry` gle
+		WHERE gle.is_cancelled = 0
+			AND gle.account = %s
+			AND gle.posting_date BETWEEN %s AND %s
+	""", ("5111 - Cost of Goods Sold - AM", from_date, to_date))
+	cost = flt(cost_result[0][0], 2) if cost_result and cost_result[0][0] else 0
+
+	return {
+		"qty": qty,
+		"amount": amount,
+		"cost": cost,
+	}
 
 
 # ── Purchases (Purchase Invoice) ───────────────────────────────────────────
@@ -129,6 +154,30 @@ def get_cash_flow_income(from_date, to_date):
 	return flt(result[0][0]) if result and result[0][0] else 0
 
 
+def get_cash_flow_supplier_income(from_date, to_date):
+	"""Supplier inflow for period.
+
+	Primary source: Payment Entry (Receive + Supplier).
+	Fallback: submitted Purchase Invoices (incoming supplies) when direct receipts are absent.
+	"""
+	result = frappe.db.sql("""
+		SELECT SUM(paid_amount) FROM `tabPayment Entry`
+		WHERE docstatus = 1 AND payment_type = 'Receive' AND party_type = 'Supplier'
+			AND posting_date BETWEEN %s AND %s
+	""", (from_date, to_date))
+
+	direct_receipts = flt(result[0][0]) if result and result[0][0] else 0
+	if direct_receipts > 0:
+		return direct_receipts
+
+	fallback = frappe.db.sql("""
+		SELECT SUM(grand_total) FROM `tabPurchase Invoice`
+		WHERE docstatus = 1 AND posting_date BETWEEN %s AND %s
+	""", (from_date, to_date))
+
+	return flt(fallback[0][0]) if fallback and fallback[0][0] else 0
+
+
 def get_cash_flow_expense(from_date, to_date):
 	"""Total expense (Pay) for a period from Payment Entry."""
 	result = frappe.db.sql("""
@@ -141,25 +190,49 @@ def get_cash_flow_expense(from_date, to_date):
 
 
 def get_cash_income_by_method(from_date, to_date, payment_method):
-	"""Income filtered by mode of payment from Payment Entry."""
+	"""Income filtered by mode of payment from GL Entry (DDS-aligned)."""
+	accounts = frappe.get_all(
+		"Mode of Payment Account",
+		filters={"parent": payment_method},
+		fields=["default_account"],
+		pluck="default_account"
+	)
+	accounts = list(set(a for a in accounts if a))
+	if not accounts:
+		return 0
+
+	placeholders = ", ".join(["%s"] * len(accounts))
 	result = frappe.db.sql("""
-		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Receive'
-			AND mode_of_payment = %s
+		SELECT IFNULL(SUM(debit_in_account_currency), 0)
+		FROM `tabGL Entry`
+		WHERE is_cancelled = 0
+			AND account IN ({})
 			AND posting_date BETWEEN %s AND %s
-	""", (payment_method, from_date, to_date))
+	""".format(placeholders), tuple(accounts) + (from_date, to_date))
 
 	return flt(result[0][0]) if result and result[0][0] else 0
 
 
 def get_cash_expense_by_method(from_date, to_date, payment_method):
-	"""Expense filtered by mode of payment from Payment Entry."""
+	"""Expense filtered by mode of payment from GL Entry (DDS-aligned)."""
+	accounts = frappe.get_all(
+		"Mode of Payment Account",
+		filters={"parent": payment_method},
+		fields=["default_account"],
+		pluck="default_account"
+	)
+	accounts = list(set(a for a in accounts if a))
+	if not accounts:
+		return 0
+
+	placeholders = ", ".join(["%s"] * len(accounts))
 	result = frappe.db.sql("""
-		SELECT SUM(paid_amount) FROM `tabPayment Entry`
-		WHERE docstatus = 1 AND payment_type = 'Pay'
-			AND mode_of_payment = %s
+		SELECT IFNULL(SUM(credit_in_account_currency), 0)
+		FROM `tabGL Entry`
+		WHERE is_cancelled = 0
+			AND account IN ({})
 			AND posting_date BETWEEN %s AND %s
-	""", (payment_method, from_date, to_date))
+	""".format(placeholders), tuple(accounts) + (from_date, to_date))
 
 	return flt(result[0][0]) if result and result[0][0] else 0
 
@@ -193,49 +266,27 @@ def get_supplier_outstanding(from_date=None, to_date=None):
 # ── Current Assets / Liabilities from GL Entry ─────────────────────────────
 
 def get_current_assets():
-	"""Sum of GL Entry balances (debit - credit) for all accounts under
-	the Current Assets parent group, using the Account tree (lft/rgt)."""
-	parent = frappe.db.get_value(
-		"Account",
-		{"name": "1100-1600 - Current Assets - AM"},
-		["lft", "rgt"],
-		as_dict=True,
-	)
-	if not parent:
-		return 0
-
+	"""Sum of GL Entry balances (debit - credit) for all Asset accounts."""
 	result = frappe.db.sql("""
 		SELECT SUM(gle.debit - gle.credit)
 		FROM `tabGL Entry` gle
 		INNER JOIN `tabAccount` acc ON acc.name = gle.account
 		WHERE gle.is_cancelled = 0
-			AND acc.lft >= %s AND acc.rgt <= %s
-			AND acc.is_group = 0
-	""", (parent.lft, parent.rgt))
+			AND acc.root_type = 'Asset'
+	""")
 
 	return flt(result[0][0], 2) if result and result[0][0] else 0
 
 
 def get_current_liabilities():
-	"""Sum of GL Entry balances (credit - debit) for all accounts under
-	the Current Liabilities parent group, using the Account tree (lft/rgt)."""
-	parent = frappe.db.get_value(
-		"Account",
-		{"name": "2100-2400 - Current Liabilities - AM"},
-		["lft", "rgt"],
-		as_dict=True,
-	)
-	if not parent:
-		return 0
-
+	"""Sum of GL Entry balances (credit - debit) for all Liability accounts."""
 	result = frappe.db.sql("""
 		SELECT SUM(gle.credit - gle.debit)
 		FROM `tabGL Entry` gle
 		INNER JOIN `tabAccount` acc ON acc.name = gle.account
 		WHERE gle.is_cancelled = 0
-			AND acc.lft >= %s AND acc.rgt <= %s
-			AND acc.is_group = 0
-	""", (parent.lft, parent.rgt))
+			AND acc.root_type = 'Liability'
+	""")
 
 	return flt(result[0][0], 2) if result and result[0][0] else 0
 
@@ -284,6 +335,44 @@ def get_transfer_balance(to_date=None):
 	accounts = frappe.get_all(
 		"Mode of Payment Account",
 		filters={"parent": ["in", ["Клик", "Перечисление"]]},
+		fields=["default_account"],
+		pluck="default_account"
+	)
+	cash_accounts = list(set(a for a in accounts if a))
+
+	if not cash_accounts:
+		return 0.0
+
+	placeholders = ", ".join(["%s"] * len(cash_accounts))
+	date_condition = "AND posting_date <= %s" if to_date else ""
+	params = tuple(cash_accounts)
+	if to_date:
+		params = params + (to_date,)
+
+	query = f"""
+		SELECT IFNULL(SUM(debit_in_account_currency) - SUM(credit_in_account_currency), 0)
+		FROM `tabGL Entry`
+		WHERE account IN ({placeholders})
+		  AND is_cancelled = 0
+		  {date_condition}
+	"""
+	result = frappe.db.sql(query, params)
+
+	return flt(result[0][0]) if result else 0.0
+
+
+def get_cash_balance_by_method(to_date=None, payment_method=None):
+	"""Net cash balance for a specific Mode of Payment from GL Entry."""
+	from frappe.utils import flt
+	import frappe
+
+	filters = {}
+	if payment_method:
+		filters["parent"] = payment_method
+
+	accounts = frappe.get_all(
+		"Mode of Payment Account",
+		filters=filters,
 		fields=["default_account"],
 		pluck="default_account"
 	)
