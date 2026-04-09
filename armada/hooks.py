@@ -7,23 +7,38 @@ app_license = "mit"
 
 # Fixtures
 fixtures = [
-    {"dt": "Custom Field", "filters": [
-        ["dt", "in", ("Stock Entry", "Item", "Kassa", "Sales Invoice")],
-        ["fieldname", "in", (
-            "custom_production_entry",
-            "armada_category_section",
-            "fp_type",
-            "segment",
-            "product_type",
-            "standard",
-            "custom_sub_account_name",
-            "custom_auto_created_from_sales_order"
-        )]
-    ]},
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "in", ("Stock Entry", "Item", "Kassa", "Sales Invoice")],
+            [
+                "fieldname", "in", (
+                    "custom_production_entry",
+                    "armada_category_section",
+                    "fp_type",
+                    "segment",
+                    "product_type",
+                    "standard",
+                    "custom_sub_account_name",
+                    "custom_auto_created_from_sales_order",
+                )
+            ]
+        ]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Customer-telegram_chat_id",
+                "Customer-telegram_invite_token",
+                "Supplier-telegram_chat_id",
+                "Supplier-telegram_invite_token",
+            ]]
+        ]
+    },
     "Account Name Mapping",
     "Account Name Mapping Item"
 ]
-
 # Apps
 # ------------------
 doc_events = {
@@ -68,6 +83,7 @@ app_include_js = [
 	"/assets/armada/js/report_formatter.js",
 	"/assets/armada/js/pl_pdf_button.js",
 	"/assets/armada/js/balance_sheet_pdf.js",
+	"/assets/armada/js/report_overrides.js"
 ]
 
 # include js, css files in header of desk.html

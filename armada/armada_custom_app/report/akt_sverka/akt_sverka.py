@@ -616,3 +616,153 @@ def get_summary_html(data, filters):
     """
 
     return html
+# ============================================================
+# ADD THESE FUNCTIONS TO THE BOTTOM OF akt_sverka.py
+# ============================================================
+
+import base64
+import os
+
+
+@frappe.whitelist()
+def generate_akt_sverka_pdf(filters):
+    """
+    Whitelisted method called from JS button.
+    Returns base64-encoded PDF string.
+    """
+    import json
+    from frappe.utils.pdf import get_pdf
+
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    # Reuse existing report data pipeline
+    data = get_data(filters)
+
+    # Company name
+    company = (
+        frappe.defaults.get_user_default("Company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+        or ""
+    )
+
+    # Pre-process rows: add _balance_val, avoid Jinja2 float arithmetic
+    for row in data:
+        bc = flt(row.get("balance_credit") or 0)
+        bd = flt(row.get("balance_debit") or 0)
+        has_balance = (
+            row.get("balance_credit") is not None
+            or row.get("balance_debit") is not None
+        )
+        row["_balance_val"] = round(bc - bd, 2) if has_balance else None
+
+    summary = _build_pdf_summary(data)
+    html = _render_pdf_html(data, filters, company, summary)
+
+    # wkhtmltopdf options (ignored by WeasyPrint, used as fallback)
+    pdf_options = {
+        "page-size": "A4",
+        "orientation": "Landscape",
+        "margin-top": "12mm",
+        "margin-right": "8mm",
+        "margin-bottom": "12mm",
+        "margin-left": "8mm",
+        "encoding": "UTF-8",
+        "no-outline": None,
+    }
+
+    try:
+        pdf_content = get_pdf(html, options=pdf_options)
+    except Exception as e:
+        frappe.log_error(
+            message=frappe.get_traceback(),
+            title="Akt Sverka PDF Error"
+        )
+        frappe.throw(
+            f"PDF генерациясида хато юз берди: {str(e)}\n"
+            "Лог: Site Logs > Error Log да кўринг."
+        )
+
+    return base64.b64encode(pdf_content).decode("utf-8")
+
+
+def _fmt_num(value):
+    """
+    Format number: thousands separator + 2 decimal places.
+    Passed as callable into Jinja2 context.
+    """
+    try:
+        v = float(value or 0)
+        return "{:,.2f}".format(v)
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _build_pdf_summary(data):
+    """Extract summary numbers from processed data rows."""
+    opening_row = data[0] if data else {}
+    opening_balance = flt(opening_row.get("balance_credit", 0)) - flt(
+        opening_row.get("balance_debit", 0)
+    )
+
+    closing_balance = 0.0
+    total_rows = [r for r in data if r.get("voucher_type") == "Total"]
+    if total_rows:
+        tr = total_rows[0]
+        closing_balance = flt(tr.get("balance_credit", 0)) - flt(
+            tr.get("balance_debit", 0)
+        )
+    elif data:
+        lr = data[-1]
+        closing_balance = flt(lr.get("balance_credit", 0)) - flt(
+            lr.get("balance_debit", 0)
+        )
+
+    def _c(vt_base):
+        return sum(flt(r.get("credit", 0)) for r in data if voucher_type_matches(r, vt_base))
+
+    def _d(vt_base):
+        return sum(flt(r.get("debit", 0)) for r in data if voucher_type_matches(r, vt_base))
+
+    goods_credit = _c("Purchase Invoice") + _c("Sales Invoice")
+    goods_debit  = _d("Purchase Invoice") + _d("Sales Invoice")
+
+    return {
+        "opening_credit":   opening_balance if opening_balance > 0 else 0.0,
+        "opening_debit":    abs(opening_balance) if opening_balance < 0 else 0.0,
+        "goods_credit":     goods_credit,
+        "goods_debit":      goods_debit,
+        "money_credit":     _c("Payment Entry"),
+        "money_debit":      _d("Payment Entry"),
+        "accruals_credit":  _c("Journal Entry"),
+        "accruals_debit":   _d("Journal Entry"),
+        "closing_credit":   closing_balance if closing_balance > 0 else 0.0,
+        "closing_debit":    abs(closing_balance) if closing_balance < 0 else 0.0,
+    }
+
+
+def _render_pdf_html(data, filters, company, summary):
+    """Read Jinja2 HTML template from report directory and render it."""
+    template_path = os.path.join(os.path.dirname(__file__), "akt_sverka_template.html")
+
+    if not os.path.exists(template_path):
+        frappe.throw(
+            f"PDF шаблон топилмади: {template_path}\n"
+            "akt_sverka_template.html файлини report папкасига қўйинг."
+        )
+
+    with open(template_path, "r", encoding="utf-8") as f:
+        template_str = f.read()
+
+    context = {
+        "rows":        data,
+        "company":     company,
+        "summary":     summary,
+        "party":       filters.get("party", ""),
+        "party_type":  filters.get("party_type", ""),
+        "from_date":   filters.get("from_date", ""),
+        "to_date":     filters.get("to_date", ""),
+        "fmt":         _fmt_num,          # callable used in template as {{ fmt(value) }}
+    }
+
+    return frappe.render_template(template_str, context)
