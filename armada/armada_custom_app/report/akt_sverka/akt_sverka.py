@@ -46,6 +46,7 @@ def get_columns():
         {"label": "Дебет", "fieldname": "debit", "fieldtype": "Currency", "width": 120},
         {"label": "Қолдиқ (Кред)", "fieldname": "balance_credit", "fieldtype": "Currency", "width": 120},
         {"label": "Қолдиқ (Деб)", "fieldname": "balance_debit", "fieldtype": "Currency", "width": 120},
+        {"label": "Коммент", "fieldname": "komment", "fieldtype": "Data", "width": 150},
     ]
 
 
@@ -236,6 +237,7 @@ def get_data(filters):
                             "currency": item.get('currency', gl.currency),
                             "credit": abs(item_amount), "debit": 0,
                             "balance": format_balance(balance) if is_last else None,
+                            "komment": item.get('komment') or "",
                         })
                     else:
                         data.append({
@@ -248,8 +250,10 @@ def get_data(filters):
                             "currency": item.get('currency', gl.currency),
                             "credit": 0, "debit": item_amount,
                             "balance": format_balance(balance) if is_last else None,
+                            "komment": item.get('komment') or "",
                         })
             else:
+                si_komment = frappe.db.get_value("Sales Invoice", voucher_no, "custom_komment") or ""
                 if is_return:
                     balance += flt(gl.credit)
                     data.append({
@@ -261,6 +265,7 @@ def get_data(filters):
                         "currency": gl.currency,
                         "credit": gl.credit, "debit": 0,
                         "balance": format_balance(balance),
+                        "komment": si_komment,
                     })
                 else:
                     balance -= flt(gl.debit)
@@ -273,6 +278,7 @@ def get_data(filters):
                         "currency": gl.currency,
                         "credit": 0, "debit": gl.debit,
                         "balance": format_balance(balance),
+                        "komment": si_komment,
                     })
 
         elif voucher_type == "Payment Entry":
@@ -460,7 +466,8 @@ def prefetch_sales_invoice_items(voucher_nos):
             sii.rate,
             si.currency,
             0 as credit,
-            sii.amount as debit
+            sii.amount as debit,
+            si.custom_komment as komment
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         WHERE sii.parent IN %s
