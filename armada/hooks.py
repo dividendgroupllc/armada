@@ -10,7 +10,7 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["dt", "in", ("Stock Entry", "Item", "Kassa", "Sales Invoice")],
+            ["dt", "in", ("Stock Entry", "Item", "Kassa", "Sales Invoice", "Sales Order")],
             [
                 "fieldname", "in", (
                     "custom_production_entry",
@@ -21,6 +21,7 @@ fixtures = [
                     "standard",
                     "custom_sub_account_name",
                     "custom_auto_created_from_sales_order",
+                    "custom_komment",
                 )
             ]
         ]

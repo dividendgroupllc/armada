@@ -34,6 +34,8 @@ def on_sales_order_submit(doc, method=None):
             sales_invoice.due_date = None
 
     sales_invoice.set(AUTO_CREATED_FIELD, 1)
+    if doc.get("custom_komment"):
+        sales_invoice.set("custom_komment", doc.custom_komment)
     sales_invoice.flags.ignore_permissions = True
     sales_invoice.insert()
     sales_invoice.submit()
