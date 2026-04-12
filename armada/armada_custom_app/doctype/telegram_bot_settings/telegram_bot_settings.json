@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "creation": "2026-04-12 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "bot_token",
+  "is_active",
+  "sb_admins",
+  "admins"
+ ],
+ "fields": [
+  {
+   "fieldname": "bot_token",
+   "fieldtype": "Small Text",
+   "label": "Bot Token",
+   "reqd": 1,
+   "description": "BotFather dan olingan token: 123456:ABC-DEF..."
+  },
+  {
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Bot faol",
+   "default": "1"
+  },
+  {
+   "fieldname": "sb_admins",
+   "fieldtype": "Section Break",
+   "label": "Adminlar"
+  },
+  {
+   "fieldname": "admins",
+   "fieldtype": "Table",
+   "label": "Admin ro'yxati",
+   "options": "Telegram Admin",
+   "reqd": 0,
+   "description": "Bir nechta admin qo'shish mumkin"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-04-12 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Armada Custom App",
+ "name": "Telegram Bot Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}
