@@ -3,7 +3,7 @@ import frappe
 import requests
 from typing import Optional
 
-from armada.armada_custom_app.telegram.config import get_bot_token
+from armada.armada_custom_app.telegram.config import get_bot_token, is_bot_active
 
 _TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -19,6 +19,8 @@ def send_message(
     parse_mode: str = "HTML",
 ) -> bool:
     """Send a text message to a Telegram chat."""
+    if not is_bot_active():
+        return False
     payload = {
         "chat_id": chat_id,
         "text": text,

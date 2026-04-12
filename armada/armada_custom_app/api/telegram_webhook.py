@@ -207,16 +207,16 @@ def _normalize_phone(raw: str) -> str:
 
 
 def _find_party_by_phone(phone: str):
-    """Customer va Supplier ni mobile_no orqali qidiradi.
+    """Customer va Supplier ni contact_number orqali qidiradi.
 
-    ERPNext da raqam turli formatlarda saqlanishi mumkin,
+    Raqam turli formatlarda kiritilishi mumkin,
     shuning uchun qisman mos kelishni ham tekshiramiz.
     """
     # To'liq mos kelish
     for doctype, name_field in [("Customer", "customer_name"), ("Supplier", "supplier_name")]:
         row = frappe.db.get_value(
             doctype,
-            {"mobile_no": phone},
+            {"contact_number": phone},
             ["name", name_field],
             as_dict=True,
         )
@@ -228,7 +228,7 @@ def _find_party_by_phone(phone: str):
     for doctype, name_field in [("Customer", "customer_name"), ("Supplier", "supplier_name")]:
         rows = frappe.db.get_all(
             doctype,
-            filters=[["mobile_no", "like", f"%{last9}"]],
+            filters=[["contact_number", "like", f"%{last9}"]],
             fields=["name", name_field],
             limit=1,
         )
@@ -263,21 +263,21 @@ def _admin_unlinked(chat_id: int) -> None:
     customers = frappe.db.get_all(
         "Customer",
         filters=[["telegram_chat_id", "in", ["", None]]],
-        fields=["customer_name", "mobile_no"],
+        fields=["customer_name", "contact_number"],
         limit=30,
     )
     for c in customers:
-        phone = c.mobile_no or "—"
+        phone = c.contact_number or "—"
         lines.append(f"👤 {c.customer_name}  <code>{phone}</code>")
 
     suppliers = frappe.db.get_all(
         "Supplier",
         filters=[["telegram_chat_id", "in", ["", None]]],
-        fields=["supplier_name", "mobile_no"],
+        fields=["supplier_name", "contact_number"],
         limit=30,
     )
     for s in suppliers:
-        phone = s.mobile_no or "—"
+        phone = s.contact_number or "—"
         lines.append(f"🏭 {s.supplier_name}  <code>{phone}</code>")
 
     if not lines:
