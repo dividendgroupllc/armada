@@ -49,7 +49,18 @@ doc_events = {
     "Cash Flow Categories": {
         "on_update": "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
         "on_trash":  "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
-    }
+    },
+    # ── Telegram bildirişnomalari ──────────────────────────────────────────────
+    "Sales Invoice": {
+        "on_submit": "armada.armada_custom_app.events.sales_invoice.on_submit",
+    },
+    "Purchase Invoice": {
+        "on_submit": "armada.armada_custom_app.events.purchase_invoice.on_submit",
+    },
+    "Payment Entry": {
+        "on_submit": "armada.armada_custom_app.events.payment_entry.on_submit",
+        "on_cancel": "armada.armada_custom_app.events.payment_entry.on_cancel",
+    },
 }
 # required_apps = []
 

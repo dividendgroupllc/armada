@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "module": "Armada Custom App",
+ "name": "telegram-setup",
+ "page_name": "telegram-setup",
+ "standard": "Yes",
+ "title": "Telegram Bot Setup",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ]
+}
