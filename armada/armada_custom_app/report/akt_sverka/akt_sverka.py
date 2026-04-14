@@ -282,7 +282,7 @@ def get_data(filters):
                     })
 
         elif voucher_type == "Payment Entry":
-            pe_info = pe_info_map.get(voucher_no, {'description': '', 'account': ''})
+            pe_info = pe_info_map.get(voucher_no, {'description': '', 'account': '', 'komment': ''})
             balance += flt(gl.credit) - flt(gl.debit)
             data.append({
                 "posting_date": gl.posting_date,
@@ -293,6 +293,7 @@ def get_data(filters):
                 "currency": gl.currency,
                 "credit": gl.credit, "debit": gl.debit,
                 "balance": format_balance(balance),
+                "komment": pe_info.get('komment', ''),
             })
 
         elif voucher_type == "Journal Entry":
@@ -314,6 +315,7 @@ def get_data(filters):
                         "credit": acc.get('credit', 0),
                         "debit": acc.get('debit', 0),
                         "balance": format_balance(balance) if is_last else None,
+                        "komment": acc.get('komment') or '',
                     })
             else:
                 balance += flt(gl.credit) - flt(gl.debit)
@@ -495,19 +497,25 @@ def prefetch_invoice_return_status(doctype, voucher_nos):
 def prefetch_payment_entry_info(voucher_nos):
     voucher_list = list(voucher_nos)
     payments = frappe.db.sql("""
-        SELECT name, payment_type, paid_from, paid_to
-        FROM `tabPayment Entry`
-        WHERE name IN %s
+        SELECT pe.name, pe.payment_type, pe.paid_from, pe.paid_to,
+               k.remarks as komment
+        FROM `tabPayment Entry` pe
+        LEFT JOIN `tabKassa` k
+               ON k.linked_entry = pe.name
+              AND k.linked_doctype = 'Payment Entry'
+              AND k.docstatus = 1
+        WHERE pe.name IN %s
     """, (voucher_list,), as_dict=True)
 
     result = {}
     for p in payments:
+        komment = p.komment or ""
         if p.payment_type == 'Pay':
-            result[p.name] = {'description': 'Pay', 'account': p.paid_from}
+            result[p.name] = {'description': 'Pay', 'account': p.paid_from, 'komment': komment}
         elif p.payment_type == 'Receive':
-            result[p.name] = {'description': 'Receive', 'account': p.paid_to}
+            result[p.name] = {'description': 'Receive', 'account': p.paid_to, 'komment': komment}
         else:
-            result[p.name] = {'description': p.payment_type, 'account': p.paid_from or p.paid_to}
+            result[p.name] = {'description': p.payment_type, 'account': p.paid_from or p.paid_to, 'komment': komment}
     return result
 
 
@@ -515,15 +523,20 @@ def prefetch_journal_entry_accounts(voucher_nos, party_type, party):
     voucher_list = list(voucher_nos)
     accounts = frappe.db.sql("""
         SELECT
-            parent as voucher_no,
-            account,
-            debit_in_account_currency as debit,
-            credit_in_account_currency as credit
-        FROM `tabJournal Entry Account`
-        WHERE parent IN %s
-          AND party_type = %s
-          AND party = %s
-        ORDER BY parent, idx
+            jea.parent as voucher_no,
+            jea.account,
+            jea.debit_in_account_currency as debit,
+            jea.credit_in_account_currency as credit,
+            k.remarks as komment
+        FROM `tabJournal Entry Account` jea
+        LEFT JOIN `tabKassa` k
+               ON k.linked_entry = jea.parent
+              AND k.linked_doctype = 'Journal Entry'
+              AND k.docstatus = 1
+        WHERE jea.parent IN %s
+          AND jea.party_type = %s
+          AND jea.party = %s
+        ORDER BY jea.parent, jea.idx
     """, (voucher_list, party_type, party), as_dict=True)
 
     result = {}
