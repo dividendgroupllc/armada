@@ -253,7 +253,15 @@ def get_data(filters):
                             "komment": item.get('komment') or "",
                         })
             else:
-                si_komment = frappe.db.get_value("Sales Invoice", voucher_no, "custom_komment") or ""
+                si_komment_row = frappe.db.sql("""
+                    SELECT COALESCE(NULLIF(si.custom_komment, ''), so.custom_komment, '') as komment
+                    FROM `tabSales Invoice` si
+                    LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
+                    LEFT JOIN `tabSales Order` so ON so.name = sii.sales_order
+                    WHERE si.name = %s
+                    LIMIT 1
+                """, (voucher_no,), as_dict=True)
+                si_komment = (si_komment_row[0].komment if si_komment_row else "") or ""
                 if is_return:
                     balance += flt(gl.credit)
                     data.append({
@@ -469,9 +477,10 @@ def prefetch_sales_invoice_items(voucher_nos):
             si.currency,
             0 as credit,
             sii.amount as debit,
-            si.custom_komment as komment
+            COALESCE(NULLIF(si.custom_komment, ''), so.custom_komment, '') as komment
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabSales Order` so ON so.name = sii.sales_order
         WHERE sii.parent IN %s
         ORDER BY sii.parent, sii.idx
     """, (voucher_list,), as_dict=True)
