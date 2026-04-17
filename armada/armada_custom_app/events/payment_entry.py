@@ -11,7 +11,7 @@ from armada.armada_custom_app.telegram.messages import (
 
 
 def _get_chat_id(party_type: str, party: str):
-    if not party_type or not party:
+    if party_type not in ("Customer", "Supplier") or not party:
         return None
     raw = frappe.db.get_value(party_type, party, "telegram_chat_id")
     if not raw:
