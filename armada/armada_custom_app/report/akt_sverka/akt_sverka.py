@@ -149,6 +149,9 @@ def get_data(filters):
         je_accounts_map = prefetch_journal_entry_accounts(je_vouchers, party_type, party)
 
     balance = opening_balance
+    seen_pi_vouchers = set()
+    seen_si_vouchers = set()
+    seen_je_vouchers = set()
 
     for gl in gl_entries:
         voucher_type = gl.voucher_type
@@ -158,6 +161,9 @@ def get_data(filters):
             is_return = pi_return_map.get(voucher_no, 0)
             items = pi_items_map.get(voucher_no, [])
             if items:
+                if voucher_no in seen_pi_vouchers:
+                    continue
+                seen_pi_vouchers.add(voucher_no)
                 total_amount = sum(flt(item.get('credit', 0)) for item in items)
                 for idx, item in enumerate(items):
                     is_last = (idx == len(items) - 1)
@@ -220,6 +226,9 @@ def get_data(filters):
             is_return = si_return_map.get(voucher_no, 0)
             items = si_items_map.get(voucher_no, [])
             if items:
+                if voucher_no in seen_si_vouchers:
+                    continue
+                seen_si_vouchers.add(voucher_no)
                 total_amount = sum(flt(item.get('debit', 0)) for item in items)
                 for idx, item in enumerate(items):
                     is_last = (idx == len(items) - 1)
@@ -307,6 +316,9 @@ def get_data(filters):
         elif voucher_type == "Journal Entry":
             je_accounts = je_accounts_map.get(voucher_no, [])
             if je_accounts:
+                if voucher_no in seen_je_vouchers:
+                    continue
+                seen_je_vouchers.add(voucher_no)
                 total_debit = sum(flt(acc.get('debit', 0)) for acc in je_accounts)
                 total_credit = sum(flt(acc.get('credit', 0)) for acc in je_accounts)
                 for idx, acc in enumerate(je_accounts):
