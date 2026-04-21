@@ -140,7 +140,16 @@ class Kassa(Document):
             ) or frappe.get_cached_value("Company", self.company, "default_payable_account")
 
         elif self.party_type == "Employee":
-            # Employee uchun payable account
+            # Employee uchun payroll payable account (2120)
+            account_number = "2120"
+            account = frappe.db.get_value(
+                "Account",
+                {"company": self.company, "account_number": account_number, "is_group": 0},
+                "name"
+            )
+            if account:
+                return account
+            # Fallback: generic payable account
             return frappe.db.get_value(
                 "Account",
                 {

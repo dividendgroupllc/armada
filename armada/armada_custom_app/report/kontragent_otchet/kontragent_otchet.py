@@ -39,7 +39,6 @@ def get_data(filters):
         "party != ''",
         "party_type IS NOT NULL",
         "party_type != ''",
-        "party_type != 'Employee'",
         "is_cancelled = 0",
     ]
     values = {}
