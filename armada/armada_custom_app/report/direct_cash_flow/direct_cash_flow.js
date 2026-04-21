@@ -60,10 +60,7 @@ frappe.query_reports["Direct Cash Flow"] = {
 
                 callback: function (r) {
                     if (!r.message) {
-                        frappe.show_alert({
-                            message: __("Ошибка: пустой ответ от сервера."),
-                            indicator: "red",
-                        });
+                        frappe.show_alert({ message: __("Ошибка: пустой ответ."), indicator: "red" });
                         return;
                     }
                     try {
@@ -72,37 +69,27 @@ frappe.query_reports["Direct Cash Flow"] = {
                         for (let i = 0; i < byteChars.length; i++) {
                             bytes[i] = byteChars.charCodeAt(i);
                         }
-                        const blob = new Blob([bytes], { type: "application/pdf" });
-                        const url  = URL.createObjectURL(blob);
-
+                        const blob     = new Blob([bytes], { type: "application/pdf" });
+                        const url      = URL.createObjectURL(blob);
                         const company  = (filters.company || "report").replace(/\s+/g, "_");
                         const filename = `DDS_${company}_${filters.from_date}_${filters.to_date}.pdf`;
 
                         const a = document.createElement("a");
-                        a.href     = url;
-                        a.download = filename;
+                        a.href = url; a.download = filename;
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
-
                         setTimeout(() => URL.revokeObjectURL(url), 5000);
 
                         frappe.show_alert({ message: __("PDF успешно скачан."), indicator: "green" });
                     } catch (err) {
                         console.error("PDF decode error:", err);
-                        frappe.show_alert({
-                            message: __("Ошибка при обработке PDF."),
-                            indicator: "red",
-                        });
+                        frappe.show_alert({ message: __("Ошибка при обработке PDF."), indicator: "red" });
                     }
                 },
-
                 error: function (err) {
-                    console.error("PDF export server error:", err);
-                    frappe.show_alert({
-                        message: __("Серверная ошибка при генерации PDF."),
-                        indicator: "red",
-                    });
+                    console.error("PDF export error:", err);
+                    frappe.show_alert({ message: __("Серверная ошибка."), indicator: "red" });
                 },
             });
         });
@@ -110,45 +97,61 @@ frappe.query_reports["Direct Cash Flow"] = {
 
     // -------------------------------------------------------------------------
     // CELL FORMATTER
-    // BUG FIX: original code had broken `<s  pan` tag — corrected to `<span>`
     // -------------------------------------------------------------------------
     formatter: function (value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
-
         if (!data) return value;
 
-        // Activity header rows — bold red
+        const fieldname = column.fieldname;
+        const raw       = (data[fieldname] !== undefined) ? data[fieldname] : null;
+        const isInflow  = data.is_inflow === 1;   // set by Python on every data row
+
+        // ── Activity header rows ──
         if (data.is_activity_header) {
             value = `<span style="font-weight:700; color:#c0392b;">${value || ""}</span>`;
         }
 
-        // Balance rows — bold dark
+        // ── Balance rows (opening / closing) ──
         if (data.is_balance_row) {
             value = `<span style="font-weight:700;">${value || ""}</span>`;
         }
 
-        // Subtotal rows — semi-bold
+        // ── Subtotal rows ──
         if (data.is_subtotal) {
             value = `<span style="font-weight:600;">${value || ""}</span>`;
         }
 
-        // Negative numbers in data rows → red parentheses
-        // BUG FIX: was `<s  pan` (broken tag) → now correct `<span>`
-        if (
-            data.row_type === "data" &&
-            column.fieldtype === "Currency" &&
-            typeof value === "string"
-        ) {
-            let raw = null;
-            if (data[column.fieldname] !== undefined) {
-                raw = data[column.fieldname];
+        if (data.row_type === "data") {
+
+            // ── Label column: prefix + colour by inflow/outflow ──
+            if (fieldname === "label") {
+                const lbl    = (data.label || "").trim();
+                const prefix = isInflow ? "+" : "-";
+                const color  = isInflow ? "#27AE60" : "#C0392B";
+                value = `<span style="color:${color};font-weight:700;">${prefix} ${frappe.utils.escape_html(lbl)}</span>`;
             }
-            if (raw !== null && parseFloat(raw) < 0) {
-                const absVal = Math.abs(parseFloat(raw)).toLocaleString("ru-RU", {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 2,
-                });
-                value = `<span style="color:#c0392b;">(${absVal})</span>`;
+
+            // ── Numeric columns: rounded display, colour by inflow/outflow ──
+            if (column.fieldtype === "Currency" && raw !== null) {
+                const v = parseFloat(raw);
+                if (!isNaN(v)) {
+                    const absRounded = Math.round(Math.abs(v));
+                    const fmt = absRounded.toLocaleString("ru-RU", {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                    });
+                    const color = isInflow ? "#27AE60" : "#C0392B";
+
+                    if (v === 0) {
+                        value = `<span style="color:#1C2833;font-weight:700;">0</span>`;
+                    } else if (v < 0) {
+                        // outflow: red parentheses
+                        value = `<span style="color:#C0392B;font-weight:700;">(${fmt})</span>`;
+                    } else {
+                        // inflow: green
+                        value = `<span style="color:#27AE60;font-weight:700;">${fmt}</span>`;
+                    }
+                }
             }
         }
 

@@ -36,6 +36,9 @@
             indicator: "blue",
         });
 
+        // Open window synchronously during click to avoid popup blocker.
+        var pdfWindow = window.open("", "_blank");
+
         frappe.call({
             method: "armada.armada_custom_app.api.balance_pdf_api.generate_balance_pdf",
             args: { filters: JSON.stringify(filters) },
@@ -43,12 +46,17 @@
             freeze_message: "PDF yaratilmoqda...",
             callback: function (r) {
                 if (r.message && r.message.file_url) {
-                    window.open(r.message.file_url);
+                    if (pdfWindow) {
+                        pdfWindow.location.href = r.message.file_url;
+                    } else {
+                        window.open(r.message.file_url);
+                    }
                     frappe.show_alert({
                         message: "PDF tayyor!",
                         indicator: "green",
                     });
                 } else {
+                    if (pdfWindow) pdfWindow.close();
                     frappe.show_alert({
                         message: "Fayl URL qaytmadi",
                         indicator: "red",
@@ -56,6 +64,7 @@
                 }
             },
             error: function () {
+                if (pdfWindow) pdfWindow.close();
                 frappe.show_alert({
                     message: "Server xatoligi",
                     indicator: "red",

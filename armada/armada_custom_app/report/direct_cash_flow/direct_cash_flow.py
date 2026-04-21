@@ -457,7 +457,7 @@ def build_report_rows(aggregated, account_map, periods, period_openings):
         for cat in cats_in_activity:
             parent_name = cat["parent_name"]
             period_data = aggregated.get(activity, {}).get(parent_name, {})
-            row = {"label": cat["category_name"], "row_type": "data"}
+            row = {"label": cat["category_name"], "row_type": "data", "is_inflow": cint(cat["is_inflow"])}
             for p in periods:
                 val = flt(period_data.get(p["key"], 0))
                 row[p["key"]] = val
@@ -876,30 +876,26 @@ td.num { text-align: right; }
             continue
 
         if pt == "balance":
-            tr_cls    = "tr-balance"
-            lbl_html  = _esc(row.get("label", ""))
-            dec       = True
-            colored   = True
+            tr_cls   = "tr-balance"
+            lbl_html = _esc(row.get("label", ""))
+            colored  = True
         elif pt == "activity":
-            tr_cls    = "tr-activity"
-            lbl_html  = _esc(row.get("label", ""))
-            dec       = True
-            colored   = True
+            tr_cls   = "tr-activity"
+            lbl_html = _esc(row.get("label", ""))
+            colored  = True
         elif pt == "raznica":
-            tr_cls    = "tr-raznica"
-            lbl_html  = _esc(row.get("label", ""))
-            dec       = False
-            colored   = False
+            tr_cls   = "tr-raznica"
+            lbl_html = _esc(row.get("label", ""))
+            colored  = False
         else:
-            tr_cls    = "tr-data" if data_idx % 2 == 0 else "tr-data-alt"
+            tr_cls   = "tr-data" if data_idx % 2 == 0 else "tr-data-alt"
             data_idx += 1
-            lbl_html  = _prefix_html(row.get("label", ""))
-            dec       = False
-            colored   = False
+            lbl_html = _prefix_html(row.get("label", ""), cint(row.get("is_inflow", -1)))
+            colored  = False
 
         td_lbl  = f'<td class="lbl">{lbl_html}</td>'
         td_nums = "".join(
-            f'<td class="num">{_fmt_num(row.get(c["fieldname"]), dec, colored)}</td>'
+            f'<td class="num">{_fmt_num(row.get(c["fieldname"]), colored)}</td>'
             for c in period_cols
         )
         trs.append(f'<tr class="{tr_cls}">{td_lbl}{td_nums}</tr>')
@@ -933,61 +929,48 @@ def _esc(text):
     )
 
 
-def _prefix_html(label):
-    """Colour leading +/- prefix orange on white data rows."""
-    label = str(label or "")
-    if label.startswith("+ "):
-        return (
-            '<span style="color:#E67E22;font-weight:700;">+</span>'
-            f' {_esc(label[2:])}'
-        )
-    if label.startswith("- "):
-        return (
-            '<span style="color:#E67E22;font-weight:700;">-</span>'
-            f' {_esc(label[2:])}'
-        )
-    return _esc(label)
-
-
-def _fmt_num(val, show_dec=False, colored=False):
+def _prefix_html(label, is_inflow=-1):
     """
-    Format a numeric value as HTML.
+    is_inflow=1  -> green  #27AE60  with + prefix
+    is_inflow=0  -> red    #C0392B  with - prefix
+    is_inflow=-1 -> no prefix, dark text (balance/activity rows)
+    """
+    txt = _esc(str(label or ""))
+    if is_inflow == 1:
+        return f'<span style="color:#27AE60;font-weight:700;">+ {txt}</span>'
+    if is_inflow == 0:
+        return f'<span style="color:#C0392B;font-weight:700;">- {txt}</span>'
+    return txt
 
-    colored=True  (balance / activity rows)
-        All numbers → WHITE text (readable on orange/red background)
-        Negatives   → white with parentheses
-    colored=False (data / raznica rows)
-        Positive    → dark  #1C2833
-        Negative    → red   #C0392B  with parentheses
-        Zero        → dark  #1C2833
 
-    show_dec=True  → always 2 decimal places
-    show_dec=False → 0 dp for integers, 2 dp if fractional
+def _fmt_num(val, colored=False):
+    """
+    Format a numeric value as HTML for PDF display.
+
+    Rounding:
+      colored=True  (balance/activity rows) -> 2 decimal places, WHITE text
+      colored=False (data/raznica rows)     -> 0 decimal places (rounded display only)
+
+    Backend full precision is preserved; only display is rounded.
     """
     if val is None or val == "":
         return ""
 
     v = flt(val)
 
-    if show_dec:
-        fmt = ",.2f"
-    else:
-        fmt = ",.2f" if abs(v - round(v)) >= 0.005 else ",.0f"
-
     if colored:
-        # White text for all numbers on coloured rows
-        zero_str = format(0.0, fmt)
+        fmt = ",.2f"
         if v == 0:
-            return f'<span class="nw">{zero_str}</span>'
+            return f'<span class="nw">{format(0.0, fmt)}</span>'
         abs_str = format(abs(v), fmt)
         if v < 0:
             return f'<span class="nw">({abs_str})</span>'
         return f'<span class="nwp">{abs_str}</span>'
     else:
-        # Normal dark/red colouring for data rows
+        # Always 0 decimals on data rows (rounded for display)
         if v == 0:
-            return f'<span class="nz">{format(0.0, fmt)}</span>'
-        abs_str = format(abs(v), fmt)
+            return '<span class="nz">0</span>'
+        abs_str = format(abs(round(v)), ",.0f")
         if v < 0:
             return f'<span class="nn">({abs_str})</span>'
         return f'<span class="np">{abs_str}</span>'
