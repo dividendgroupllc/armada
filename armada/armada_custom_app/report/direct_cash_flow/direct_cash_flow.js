@@ -72,7 +72,7 @@ frappe.query_reports["Direct Cash Flow"] = {
                         const blob     = new Blob([bytes], { type: "application/pdf" });
                         const url      = URL.createObjectURL(blob);
                         const company  = (filters.company || "report").replace(/\s+/g, "_");
-                        const filename = `DDS_${company}_${filters.from_date}_${filters.to_date}.pdf`;
+                        const filename = `Direct_Cash_Flow_${company}_${filters.from_date}_${filters.to_date}.pdf`;
 
                         const a = document.createElement("a");
                         a.href = url; a.download = filename;
@@ -97,6 +97,8 @@ frappe.query_reports["Direct Cash Flow"] = {
 
     // -------------------------------------------------------------------------
     // CELL FORMATTER
+    // ALL numeric values rounded to 0 decimal places for display.
+    // Backend stores full precision — only presentation is rounded.
     // -------------------------------------------------------------------------
     formatter: function (value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
@@ -104,26 +106,68 @@ frappe.query_reports["Direct Cash Flow"] = {
 
         const fieldname = column.fieldname;
         const raw       = (data[fieldname] !== undefined) ? data[fieldname] : null;
-        const isInflow  = data.is_inflow === 1;   // set by Python on every data row
+
+        // Helper: round and format integer with thousand separators
+        function fmtRounded(num) {
+            return Math.abs(Math.round(num)).toLocaleString("ru-RU", {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            });
+        }
 
         // ── Activity header rows ──
         if (data.is_activity_header) {
-            value = `<span style="font-weight:700; color:#c0392b;">${value || ""}</span>`;
+            if (column.fieldtype === "Currency" && raw !== null) {
+                const v = parseFloat(raw);
+                if (!isNaN(v)) {
+                    value = v === 0
+                        ? `<span style="font-weight:700;">0</span>`
+                        : v < 0
+                            ? `<span style="font-weight:700;">(${fmtRounded(v)})</span>`
+                            : `<span style="font-weight:700;">${fmtRounded(v)}</span>`;
+                }
+            } else {
+                value = `<span style="font-weight:700; color:#c0392b;">${value || ""}</span>`;
+            }
         }
 
         // ── Balance rows (opening / closing) ──
         if (data.is_balance_row) {
-            value = `<span style="font-weight:700;">${value || ""}</span>`;
+            if (column.fieldtype === "Currency" && raw !== null) {
+                const v = parseFloat(raw);
+                if (!isNaN(v)) {
+                    value = v === 0
+                        ? `<span style="font-weight:700;">0</span>`
+                        : v < 0
+                            ? `<span style="font-weight:700;">(${fmtRounded(v)})</span>`
+                            : `<span style="font-weight:700;">${fmtRounded(v)}</span>`;
+                }
+            } else {
+                value = `<span style="font-weight:700;">${value || ""}</span>`;
+            }
         }
 
         // ── Subtotal rows ──
         if (data.is_subtotal) {
-            value = `<span style="font-weight:600;">${value || ""}</span>`;
+            if (column.fieldtype === "Currency" && raw !== null) {
+                const v = parseFloat(raw);
+                if (!isNaN(v)) {
+                    value = v === 0
+                        ? `<span style="font-weight:600;">0</span>`
+                        : v < 0
+                            ? `<span style="font-weight:600;">(${fmtRounded(v)})</span>`
+                            : `<span style="font-weight:600;">${fmtRounded(v)}</span>`;
+                }
+            } else {
+                value = `<span style="font-weight:600;">${value || ""}</span>`;
+            }
         }
 
+        // ── Data rows ──
         if (data.row_type === "data") {
+            const isInflow = data.is_inflow === 1;
 
-            // ── Label column: prefix + colour by inflow/outflow ──
+            // Label column: + green / - red
             if (fieldname === "label") {
                 const lbl    = (data.label || "").trim();
                 const prefix = isInflow ? "+" : "-";
@@ -131,25 +175,16 @@ frappe.query_reports["Direct Cash Flow"] = {
                 value = `<span style="color:${color};font-weight:700;">${prefix} ${frappe.utils.escape_html(lbl)}</span>`;
             }
 
-            // ── Numeric columns: rounded display, colour by inflow/outflow ──
+            // Numeric columns: rounded, green inflow / red outflow
             if (column.fieldtype === "Currency" && raw !== null) {
                 const v = parseFloat(raw);
                 if (!isNaN(v)) {
-                    const absRounded = Math.round(Math.abs(v));
-                    const fmt = absRounded.toLocaleString("ru-RU", {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                    });
-                    const color = isInflow ? "#27AE60" : "#C0392B";
-
                     if (v === 0) {
                         value = `<span style="color:#1C2833;font-weight:700;">0</span>`;
                     } else if (v < 0) {
-                        // outflow: red parentheses
-                        value = `<span style="color:#C0392B;font-weight:700;">(${fmt})</span>`;
+                        value = `<span style="color:#C0392B;font-weight:700;">(${fmtRounded(v)})</span>`;
                     } else {
-                        // inflow: green
-                        value = `<span style="color:#27AE60;font-weight:700;">${fmt}</span>`;
+                        value = `<span style="color:#27AE60;font-weight:700;">${fmtRounded(v)}</span>`;
                     }
                 }
             }

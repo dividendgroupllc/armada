@@ -800,7 +800,7 @@ td { overflow: hidden; word-wrap: break-word; }
     border-top: 2px solid #D5D8DC;
 }
 .tr-raznica td.lbl { color: #E74C3C; }
-.tr-raznica td.num { color: #1C2833; }
+.tr-raznica td.num { color: #E74C3C; }
 
 /* ── Cell alignment ── */
 td.lbl { text-align: left; }
@@ -886,7 +886,14 @@ td.num { text-align: right; }
         elif pt == "raznica":
             tr_cls   = "tr-raznica"
             lbl_html = _esc(row.get("label", ""))
-            colored  = False
+            td_lbl   = f'<td class="lbl">{lbl_html}</td>'
+            # Raznica numbers always red — use inline style to override span classes
+            td_nums  = "".join(
+                f'<td class="num"><span style="color:#E74C3C;font-weight:700;">{_fmt_raznica(row.get(c["fieldname"]))}</span></td>'
+                for c in period_cols
+            )
+            trs.append(f'<tr class="{tr_cls}">{td_lbl}{td_nums}</tr>')
+            continue
         else:
             tr_cls   = "tr-data" if data_idx % 2 == 0 else "tr-data-alt"
             data_idx += 1
@@ -943,6 +950,17 @@ def _prefix_html(label, is_inflow=-1):
     return txt
 
 
+def _fmt_raznica(val):
+    """Raznica row numbers: always red, 0 decimal places, parentheses for negatives."""
+    v = flt(val)
+    if v == 0:
+        return "0"
+    abs_str = format(abs(round(v)), ",.0f")
+    if v < 0:
+        return f"({abs_str})"
+    return abs_str
+
+
 def _fmt_num(val, colored=False):
     """
     Format a numeric value as HTML for PDF display.
@@ -958,19 +976,17 @@ def _fmt_num(val, colored=False):
 
     v = flt(val)
 
+    # ALL rows: 0 decimal places (rounded for display, full precision in backend)
+    abs_str = format(abs(round(v)), ",.0f")
     if colored:
-        fmt = ",.2f"
         if v == 0:
-            return f'<span class="nw">{format(0.0, fmt)}</span>'
-        abs_str = format(abs(v), fmt)
+            return '<span class="nw">0</span>'
         if v < 0:
             return f'<span class="nw">({abs_str})</span>'
         return f'<span class="nwp">{abs_str}</span>'
     else:
-        # Always 0 decimals on data rows (rounded for display)
         if v == 0:
             return '<span class="nz">0</span>'
-        abs_str = format(abs(round(v)), ",.0f")
         if v < 0:
             return f'<span class="nn">({abs_str})</span>'
         return f'<span class="np">{abs_str}</span>'
