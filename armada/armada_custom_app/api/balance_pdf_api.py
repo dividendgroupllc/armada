@@ -108,8 +108,19 @@ def generate_balance_pdf(filters):
     ]
     n_cols = len(col_keys)
 
-    # Parse BS rows → data dict
+    # Parse BS rows → data dict (cumulative — for balance accounts)
     data = _extract_rows(rows, col_keys, ACCOUNT_KEY_MAP)
+
+    # ── 1b. Flow rows (monthly, not cumulative) ──
+    # pribyl_tekushih va dividendy — analiz uchun oylik harakatni ko'rsatamiz,
+    # shunda: prev_pribyl_proshlyh + pribyl_tekushih + dividendy = next_pribyl_proshlyh
+    monthly_filters = dict(normalized)
+    monthly_filters["accumulated_values"] = 0
+    _, monthly_rows, *_ = bs_execute(frappe._dict(monthly_filters))
+    monthly_data = _extract_rows(monthly_rows, col_keys, ACCOUNT_KEY_MAP)
+    for flow_key in ("pribyl_tekushih", "dividendy"):
+        if flow_key in monthly_data:
+            data[flow_key] = monthly_data[flow_key]
 
     # ── 2. Generate PDF ──
     from armada.armada_custom_app.pdf_engine.balance_pdf import generate
