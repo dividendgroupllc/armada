@@ -156,6 +156,22 @@ def _derive(data, n):
     zarplata_sobst   = g("zarplata_sobstvennika")
     prochie_obyaz    = g("prochie_obyaz")
 
+    # ── Retained Earnings roll-forward ──
+    # ERPNext "Retained Earnings" (3400) stays static within a fiscal year —
+    # profit is closed into it only at year-end. For a month-by-month balance
+    # sheet we recompute it so each column reflects prior months' closed-out
+    # profit/dividends:
+    #     pribyl_proshlyh[i] = pribyl_proshlyh[i-1]
+    #                        + pribyl_tekushih[i-1] + dividendy[i-1]
+    # pribyl_tekushih and dividendy arrive as MONTHLY flows (see
+    # balance_pdf_api.py §1b, which re-fetches them with accumulated_values=0).
+    opening_re = pribyl_pr[0] if pribyl_pr else 0.0
+    pribyl_pr_rolled = [opening_re]
+    for i in range(1, n):
+        pribyl_pr_rolled.append(
+            pribyl_pr_rolled[-1] + pribyl_tek[i - 1] + dividendy[i - 1]
+        )
+
     # ── Totals ──
     zapasy = [syryo[i] + polufabrikat[i] + gotoviy_produkt[i] for i in range(n)]
     dengi  = [nalichnye[i] + klik[i] + perechislenie[i] for i in range(n)]
@@ -183,7 +199,7 @@ def _derive(data, n):
             for i in range(n)
         ]
         itogo_passiv = [
-            ustavniy[i] + pribyl_pr[i] + pribyl_tek[i] + dividendy[i] + investiciya[i]
+            ustavniy[i] + pribyl_pr_rolled[i] + pribyl_tek[i] + dividendy[i] + investiciya[i]
             + kredit_dolg[i] + zaymy_dolg[i] + lizing[i]
             + kredit_kratk[i] + zaymy_kratk[i]
             + zadolzh_postav[i] + zadolzh_sotr_p[i] + zadolzh_nalog[i]
@@ -196,6 +212,7 @@ def _derive(data, n):
 
     return {
         "empty_cash_row":      [0.0] * n,
+        "pribyl_proshlyh":     pribyl_pr_rolled,
         "itogo_aktiv":         itogo_aktiv,
         "itogo_passiv":        itogo_passiv,
         "raznitsa":            raznitsa,
