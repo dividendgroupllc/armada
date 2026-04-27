@@ -6,6 +6,11 @@ Module  : armada_custom_app
 Data sources  : Payment Entry (primary) + Journal Entry (secondary)
 Mapping       : Cash Flow Categories + Cash Flow Categories Item
 Performance   : 4 SQL queries max, account_map cached 5 min, no N+1
+
+Reorder API   : save_category_order()   — drag-and-drop persistence
+               get_categories_for_reorder() — dialog data loader
+Concurrency   : Single writer model (kassa admin / System Manager only)
+               Readers get fresh order on next cache expiry (≤5 min)
 """
 
 from __future__ import unicode_literals
@@ -15,6 +20,19 @@ from frappe.utils import flt, cint, getdate
 from collections import defaultdict
 from datetime import date, timedelta
 import calendar
+
+
+# ---------------------------------------------------------------------------
+# ROLES ALLOWED TO REORDER
+# ---------------------------------------------------------------------------
+
+REORDER_ALLOWED_ROLES = {"System Manager", "kassa admin", "Accounts Manager"}
+
+
+def _can_reorder():
+    """Return True if the current user has write permission on category order."""
+    user_roles = set(frappe.get_roles(frappe.session.user))
+    return bool(user_roles & REORDER_ALLOWED_ROLES)
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +242,7 @@ def build_account_map():
             "display_label":      display_label,
             "activity_type":      parent["activity_type"],
             "is_inflow":          effective_inflow,
-            "sort_order":         cint(parent["sort_order"]),
+            "sort_order":         flt(parent["sort_order"]),
             "parent_name":        parent["name"],
             "direction_override": override,
         }
@@ -526,6 +544,158 @@ def clear_cache(doc=None, method=None):
     frappe.cache().delete_value("direct_cash_flow_account_map_v2")
 
 
+# ---------------------------------------------------------------------------
+# DRAG-AND-DROP REORDER API
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_categories_for_reorder():
+    """
+    Returns all Cash Flow Categories grouped-ready for the reorder dialog.
+    Only users with reorder permission receive the can_reorder flag = True.
+    Readers get the same data but UI renders in read-only mode.
+    """
+    categories = frappe.get_all(
+        "Cash Flow Categories",
+        fields=["name", "category_name", "activity_type", "sort_order"],
+        order_by="sort_order asc, creation asc",
+    )
+
+    return {
+        "categories":  categories,
+        "can_reorder": _can_reorder(),
+    }
+
+
+@frappe.whitelist()
+def save_category_order(ordered_names):
+    """
+    Persists the new drag-and-drop order for Cash Flow Categories.
+
+    Protocol:
+    - Only REORDER_ALLOWED_ROLES can call this.
+    - ordered_names: JSON list of category `name` values in desired order.
+    - Uses gap-1000 float spacing: 1000.0, 2000.0, 3000.0 …
+      → Supports up to 999 inserts between any two items before
+        a normalize pass is needed.
+    - Does NOT touch activity_type — cross-group drag is intentionally
+      disabled in the UI. This is a server-side safety guard as well.
+    - Invalidates account_map cache on success.
+    - Returns an order_hash (sorted names joined) so client can verify
+      round-trip integrity.
+    """
+    import json
+    import hashlib
+
+    # ── Permission guard ──────────────────────────────────────────────────
+    if not _can_reorder():
+        frappe.throw(
+            _("Недостаточно прав для изменения порядка категорий."),
+            frappe.PermissionError,
+        )
+
+    # ── Input parsing ─────────────────────────────────────────────────────
+    if isinstance(ordered_names, str):
+        try:
+            ordered_names = json.loads(ordered_names)
+        except (ValueError, TypeError):
+            frappe.throw(_("Invalid input: could not parse ordered_names JSON"))
+
+    if not ordered_names or not isinstance(ordered_names, list):
+        frappe.throw(_("Invalid input: expected non-empty list of category names"))
+
+    # ── Validate all names exist and belong to Cash Flow Categories ───────
+    existing = {
+        r["name"]
+        for r in frappe.get_all("Cash Flow Categories", fields=["name"])
+    }
+    invalid = [n for n in ordered_names if n not in existing]
+    if invalid:
+        frappe.throw(
+            _("Unknown category name(s): {0}").format(", ".join(invalid))
+        )
+
+    # ── Write gap-1000 float sort_order ───────────────────────────────────
+    # update_modified=False: do not pollute modified/modified_by audit trail
+    # for a cosmetic reorder operation.
+    for i, name in enumerate(ordered_names):
+        frappe.db.set_value(
+            "Cash Flow Categories",
+            name,
+            "sort_order",
+            float((i + 1) * 1000),
+            update_modified=False,
+        )
+
+    frappe.db.commit()
+
+    # ── Invalidate cache so next report load picks up new order ──────────
+    clear_cache()
+
+    # ── Return integrity hash for client-side verification ───────────────
+    order_hash = hashlib.md5(
+        ",".join(ordered_names).encode()
+    ).hexdigest()[:8]
+
+    return {
+        "status":     "ok",
+        "count":      len(ordered_names),
+        "order_hash": order_hash,
+    }
+
+
+@frappe.whitelist()
+def normalize_sort_order():
+    """
+    One-time maintenance utility.
+    Re-spaces all sort_order values to multiples of 1000
+    without changing relative order.
+
+    Call via:
+        bench --site <site> execute \
+        armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.normalize_sort_order
+    OR via frappe.call() from browser console (System Manager only).
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw(_("Only System Manager can run normalize_sort_order."),
+                     frappe.PermissionError)
+
+    cats = frappe.get_all(
+        "Cash Flow Categories",
+        fields=["name", "activity_type"],
+        order_by="sort_order asc, creation asc",
+    )
+
+    # Normalize per activity group to keep intra-group gaps clean
+    from collections import defaultdict as _dd
+    groups = _dd(list)
+    for c in cats:
+        groups[c["activity_type"]].append(c["name"])
+
+    ACTIVITY_ORDER_LOCAL = [
+        "Операционная деятельность",
+        "Инвестиционная деятельность",
+        "Финансовая деятельность",
+    ]
+
+    global_index = 0
+    for act in ACTIVITY_ORDER_LOCAL:
+        for name in groups.get(act, []):
+            global_index += 1
+            frappe.db.set_value(
+                "Cash Flow Categories",
+                name,
+                "sort_order",
+                float(global_index * 1000),
+                update_modified=False,
+            )
+
+    frappe.db.commit()
+    clear_cache()
+
+    return {"status": "ok", "normalized": global_index}
+
+
 # ===========================================================================
 # PDF EXPORT  —  pixel-perfect match to the reference Armada Cash Flow PDF
 # ===========================================================================
@@ -568,19 +738,9 @@ def export_pdf(filters=None):
 
 # ---------------------------------------------------------------------------
 # ROW REORDER  —  Frappe order → PDF order
-#   Frappe:  [header] → [data...] → [subtotal] → [spacer]
-#   PDF:     [orange-header-with-totals] → [data...] → [spacer]
 # ---------------------------------------------------------------------------
 
 def _reorder_for_pdf(rows, period_cols):
-    """
-    Tags each row with '_pdf_type':
-      'balance'   Денег на начало/конец месяца     (red bg, white text)
-      'activity'  Activity section header + totals  (orange bg, white text)
-      'data'      Individual cash-flow item          (white bg)
-      'spacer'    Blank separator row
-      'raznica'   Разница с балансом  (all zeros, white bg)
-    """
     pdf_rows = []
     i = 0
     n = len(rows)
@@ -646,14 +806,6 @@ def _reorder_for_pdf(rows, period_cols):
 
 # ---------------------------------------------------------------------------
 # HTML BUILDER
-# Exact color spec from reference PDF:
-#   Title bar       #1C2833 bg / white text
-#   Год row         #D5D8DC gray bg (full row) / black text
-#   Месяц row       #D5D8DC gray bg (full row) / black bold text
-#   Balance rows    #E74C3C red bg / WHITE text & numbers
-#   Activity rows   #E67E22 orange bg / WHITE text & numbers
-#   Data rows       #FFFFFF white bg / dark text; negatives red with parens
-#   All borders     1px solid #FFFFFF  (white lines)
 # ---------------------------------------------------------------------------
 
 def _build_pdf_html(columns, data, filters):
@@ -668,7 +820,6 @@ def _build_pdf_html(columns, data, filters):
     label_w   = f"{label_pct}%"
     num_w     = f"{num_pct}%"
 
-    # Split "Май 2025" → ("2025", "Май")
     split_hdrs = []
     for col in period_cols:
         lbl   = col["label"]
@@ -696,8 +847,6 @@ table {
     table-layout: fixed;
 }
 td { overflow: hidden; word-wrap: break-word; }
-
-/* ── Title bar ── */
 .tr-title td {
     background-color: #1C2833;
     color: #FFFFFF;
@@ -707,8 +856,6 @@ td { overflow: hidden; word-wrap: break-word; }
     border: none;
     letter-spacing: 0.2px;
 }
-
-/* ── Год row: ENTIRE row gray, black text ── */
 .tr-year td {
     background-color: #D5D8DC;
     color: #1C2833;
@@ -719,8 +866,6 @@ td { overflow: hidden; word-wrap: break-word; }
     border: 1px solid #FFFFFF;
 }
 .tr-year td.lbl { text-align: left; padding-left: 8px; }
-
-/* ── Месяц row: ENTIRE row gray, black bold text ── */
 .tr-month td {
     background-color: #D5D8DC;
     color: #1C2833;
@@ -731,8 +876,6 @@ td { overflow: hidden; word-wrap: break-word; }
     border: 1px solid #FFFFFF;
 }
 .tr-month td.lbl { text-align: left; padding-left: 8px; }
-
-/* ── Single header row (Weekly / Daily) ── */
 .tr-colhdr td {
     background-color: #D5D8DC;
     color: #1C2833;
@@ -743,8 +886,6 @@ td { overflow: hidden; word-wrap: break-word; }
     border: 1px solid #FFFFFF;
 }
 .tr-colhdr td.lbl { text-align: left; padding-left: 8px; }
-
-/* ── Balance rows: RED bg, WHITE text ── */
 .tr-balance td {
     background-color: #E74C3C;
     color: #FFFFFF;
@@ -753,8 +894,6 @@ td { overflow: hidden; word-wrap: break-word; }
     padding: 4px 6px;
     border: 1px solid #FFFFFF;
 }
-
-/* ── Activity header rows: ORANGE bg, WHITE text ── */
 .tr-activity td {
     background-color: #E67E22;
     color: #FFFFFF;
@@ -763,8 +902,6 @@ td { overflow: hidden; word-wrap: break-word; }
     padding: 4px 6px;
     border: 1px solid #FFFFFF;
 }
-
-/* ── Data rows: white bg, dark text ── */
 .tr-data td {
     background-color: #FFFFFF;
     color: #1C2833;
@@ -781,16 +918,12 @@ td { overflow: hidden; word-wrap: break-word; }
     padding: 2.5px 5px;
     border: 1px solid #FFFFFF;
 }
-
-/* ── Spacer ── */
 .tr-spacer td {
     background-color: #FFFFFF;
     border: none;
     height: 4px;
     padding: 0;
 }
-
-/* ── Разница с балансом ── */
 .tr-raznica td {
     background-color: #FFFFFF;
     font-weight: 700;
@@ -801,21 +934,13 @@ td { overflow: hidden; word-wrap: break-word; }
 }
 .tr-raznica td.lbl { color: #E74C3C; }
 .tr-raznica td.num { color: #E74C3C; }
-
-/* ── Cell alignment ── */
 td.lbl { text-align: left; }
 td.num { text-align: right; }
-
-/* ── Number colours (data rows only) ── */
-.nn { color: #C0392B; }          /* outflow  — red             */
-.np { color: #27AE60; }          /* inflow   — green           */
-.nz { color: #1C2833; }          /* zero     — dark            */
-
-/* ── Coloured-row numbers (white) ── */
+.nn  { color: #C0392B; }
+.np  { color: #27AE60; }
+.nz  { color: #1C2833; }
 .nw  { color: #FFFFFF; }
 .nwp { color: #FFFFFF; }
-
-/* ── Footer ── */
 .footer {
     margin-top: 5px;
     font-size: 7pt;
@@ -826,14 +951,12 @@ td.num { text-align: right; }
 
     trs = []
 
-    # 1. Title
     trs.append(
         f'<tr class="tr-title">'
         f'<td class="lbl" colspan="{n + 1}">Движение Денежных Средств</td>'
         f'</tr>'
     )
 
-    # 2. Column headers
     if use_two_rows:
         year_cells = "".join(
             f'<td class="num" style="width:{num_w};">{_esc(yr)}</td>'
@@ -864,7 +987,6 @@ td.num { text-align: right; }
             f'{col_cells}</tr>'
         )
 
-    # 3. Data rows
     data_idx = 0
 
     for row in pdf_rows:
@@ -887,9 +1009,9 @@ td.num { text-align: right; }
             tr_cls   = "tr-raznica"
             lbl_html = _esc(row.get("label", ""))
             td_lbl   = f'<td class="lbl">{lbl_html}</td>'
-            # Raznica numbers always red — use inline style to override span classes
             td_nums  = "".join(
-                f'<td class="num"><span style="color:#E74C3C;font-weight:700;">{_fmt_raznica(row.get(c["fieldname"]))}</span></td>'
+                f'<td class="num"><span style="color:#E74C3C;font-weight:700;">'
+                f'{_fmt_raznica(row.get(c["fieldname"]))}</span></td>'
                 for c in period_cols
             )
             trs.append(f'<tr class="{tr_cls}">{td_lbl}{td_nums}</tr>')
@@ -937,11 +1059,6 @@ def _esc(text):
 
 
 def _prefix_html(label, is_inflow=-1):
-    """
-    is_inflow=1  -> green  #27AE60  with + prefix
-    is_inflow=0  -> red    #C0392B  with - prefix
-    is_inflow=-1 -> no prefix, dark text (balance/activity rows)
-    """
     txt = _esc(str(label or ""))
     if is_inflow == 1:
         return f'<span style="color:#27AE60;font-weight:700;">+ {txt}</span>'
@@ -951,7 +1068,6 @@ def _prefix_html(label, is_inflow=-1):
 
 
 def _fmt_raznica(val):
-    """Raznica row numbers: always red, 0 decimal places, parentheses for negatives."""
     v = flt(val)
     if v == 0:
         return "0"
@@ -962,21 +1078,9 @@ def _fmt_raznica(val):
 
 
 def _fmt_num(val, colored=False):
-    """
-    Format a numeric value as HTML for PDF display.
-
-    Rounding:
-      colored=True  (balance/activity rows) -> 2 decimal places, WHITE text
-      colored=False (data/raznica rows)     -> 0 decimal places (rounded display only)
-
-    Backend full precision is preserved; only display is rounded.
-    """
     if val is None or val == "":
         return ""
-
     v = flt(val)
-
-    # ALL rows: 0 decimal places (rounded for display, full precision in backend)
     abs_str = format(abs(round(v)), ",.0f")
     if colored:
         if v == 0:

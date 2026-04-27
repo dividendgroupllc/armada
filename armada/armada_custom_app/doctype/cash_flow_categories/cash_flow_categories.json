@@ -44,14 +44,14 @@
   {
    "default": "0",
    "fieldname": "sort_order",
-   "fieldtype": "Int",
+   "fieldtype": "Float",
    "label": "Sort Order"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-05 12:37:56.258721",
+ "modified": "2026-04-27 21:32:38.126980",
  "modified_by": "Administrator",
  "module": "Armada Custom app",
  "name": "Cash Flow Categories",
