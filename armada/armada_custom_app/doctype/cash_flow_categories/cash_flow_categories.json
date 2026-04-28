@@ -51,7 +51,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-27 21:32:38.126980",
+ "modified": "2026-04-28 12:07:24.414417",
  "modified_by": "Administrator",
  "module": "Armada Custom app",
  "name": "Cash Flow Categories",
@@ -73,7 +73,11 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "search_fields": "category_name",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "category_name",
+ "translated_doctype": 1
 }
