@@ -5,6 +5,7 @@ P&L PDF generator — dynamic header + data rows
 import os
 import pdfplumber
 from collections import defaultdict
+from reportlab.lib.colors import Color
 
 from armada.armada_custom_app.pdf_engine.base_generator import (
     register_fonts, get_template, get_output_path,
@@ -15,11 +16,8 @@ from armada.armada_custom_app.pdf_engine.base_generator import (
 TEMPLATE_COL_X = [290.0, 364.6, 439.2, 513.7, 588.3, 662.9, 737.5, 812.0]
 LABEL_CUTOFF   = 217.0
 
-# Header rows top pozitsiyalari — bular template-dan SKIP qilinadi
-# va col_keys dan dinamik yoziladi
-HEADER_TOPS = {36, 37, 47, 59}   # oy raqam, Год, Месяц row lari
+HEADER_TOPS = {36, 37, 47, 59}
 
-# Oy nomi (lotin 3 harf → rus to'liq nom)
 MONTH_RU = {
     "jan":"Январь",  "feb":"Февраль", "mar":"Март",
     "apr":"Апрель",  "may":"Май",     "jun":"Июнь",
@@ -27,8 +25,13 @@ MONTH_RU = {
     "oct":"Октябрь", "nov":"Ноябрь",  "dec":"Декабрь",
 }
 
+# Bu row larda manfiy qiymat qizil fonda ko'rinmaydi —
+# shuning uchun qora rangda chizamiz
+RED_BG_ROWS = {"marginal", "gross_profit", "op_profit", "net_profit"}
+
+
 def _parse_col(ck):
-    """'oct_2025' → ('Октябрь', '2025')"""
+    """'oct_2025' -> ('Октябрь', '2025')"""
     parts = ck.split("_")
     mon   = MONTH_RU.get(parts[0].lower(), parts[0].capitalize())
     year  = parts[1] if len(parts) > 1 else ""
@@ -124,7 +127,8 @@ def _derive(data, n):
     def vsum(*keys):
         r = [0.0]*n
         for k in keys:
-            for i,v in enumerate(g(k)): r[i] += v
+            for i, v in enumerate(g(k)):
+                r[i] += v
         return r
 
     marginal    = [rev[i] - cogs[i] - ladj[i] for i in range(n)]
@@ -137,7 +141,7 @@ def _derive(data, n):
     net_profit  = [op_profit[i] - nalog[i] for i in range(n)]
 
     def pct(num, den):
-        return [round(num[i]/den[i]*100,2) if den[i] else 0.0 for i in range(n)]
+        return [round(num[i]/den[i]*100, 2) if den[i] else 0.0 for i in range(n)]
 
     return {
         "marginal":     marginal,
@@ -157,35 +161,45 @@ def _derive(data, n):
     }
 
 
-def _draw_dynamic_header(cv, col_keys, col_x, page):
-    """
-    Template-dagi statik header o'rniga dinamik header chizadi.
-    Yil va oy nomlarini col_keys dan oladi.
-    """
-    from reportlab.lib.colors import Color
+def _is_red_rect(clr):
+    """pdfplumber rect non_stroking_color qizilmi tekshiradi."""
+    if isinstance(clr, (int, float)):
+        return False
+    if isinstance(clr, (list, tuple)) and len(clr) >= 3:
+        return clr[0] > 0.5 and clr[1] < 0.35 and clr[2] < 0.35
+    return False
 
-    # Template-dan header row-larini topib, ulardan font/size/color olamiz
+
+def _value_color(v, data_key, base_clr):
+    """
+    Qiymat rangi:
+    - RED_BG_ROWS da manfiy → C_BLACK (qizil fonda ko'rinadi)
+    - Boshqa row larda manfiy → C_RED
+    - Musbat → base_clr
+    """
+    if not isinstance(v, (int, float)):
+        return base_clr
+    if v < 0:
+        if data_key in RED_BG_ROWS:
+            return C_BLACK
+        return C_RED
+    return base_clr
+
+
+def _draw_dynamic_header(cv, col_keys, col_x, page):
     chars_by_top = defaultdict(list)
     for ch in page.chars:
         chars_by_top[round(ch["top"])].append(ch)
 
-    # top=47 → "Год" row — medium gray bg
-    # top=59 → "Месяц" row — medium gray bg
-    # Ular allaqachon template-dan background sifatida chizilgan
-    # Faqat matnni qayta chizamiz
-
-    # Год row (top≈47)
+    # Год row (top~47)
     year_row_chars = chars_by_top.get(47, [])
     if year_row_chars:
-        ref = [c for c in year_row_chars if c.get("text","").strip() and c["x0"] < LABEL_CUTOFF]
+        ref = [c for c in year_row_chars if c.get("text", "").strip() and c["x0"] < LABEL_CUTOFF]
         if ref:
             size = ref[0].get("size", 6.88)
-            font = resolve_font(ref[0].get("fontname",""))
-            clr  = to_color(ref[0].get("non_stroking_color", (1,1,1)))
+            font = resolve_font(ref[0].get("fontname", ""))
+            clr  = to_color(ref[0].get("non_stroking_color", (1, 1, 1)))
             by   = rl_y(ref[0]["bottom"])
-
-            # "Год" label — template-dan keladi (label zone)
-            # Oylar uchun yil yoz
             for i, cx in enumerate(col_x):
                 if i < len(col_keys):
                     _, year = _parse_col(col_keys[i])
@@ -193,16 +207,15 @@ def _draw_dynamic_header(cv, col_keys, col_x, page):
                     cv.setFillColor(clr)
                     cv.drawRightString(cx, by, year)
 
-    # Месяц row (top≈59)
+    # Месяц row (top~59)
     month_row_chars = chars_by_top.get(59, [])
     if month_row_chars:
-        ref = [c for c in month_row_chars if c.get("text","").strip() and c["x0"] < LABEL_CUTOFF]
+        ref = [c for c in month_row_chars if c.get("text", "").strip() and c["x0"] < LABEL_CUTOFF]
         if ref:
             size = ref[0].get("size", 6.88)
-            font = resolve_font(ref[0].get("fontname",""))
-            clr  = to_color(ref[0].get("non_stroking_color", (1,1,1)))
+            font = resolve_font(ref[0].get("fontname", ""))
+            clr  = to_color(ref[0].get("non_stroking_color", (1, 1, 1)))
             by   = rl_y(ref[0]["bottom"])
-
             for i, cx in enumerate(col_x):
                 if i < len(col_keys):
                     mon, _ = _parse_col(col_keys[i])
@@ -232,11 +245,17 @@ def generate(data: dict,
         # 1. Backgrounds
         cv.setFillColor(C_WHITE)
         cv.rect(0, 0, 842, 1191, stroke=0, fill=1)
+
         for r in page.rects:
-            if not r.get("fill"): continue
+            if not r.get("fill"):
+                continue
             clr = r.get("non_stroking_color")
-            if clr is None: continue
-            cv.setFillColor(to_color(clr))
+            if clr is None:
+                continue
+            if _is_red_rect(clr):
+                cv.setFillColor(Color(0.72, 0.15, 0.08))
+            else:
+                cv.setFillColor(to_color(clr))
             cv.rect(r["x0"], rl_y(r["bottom"]), r["width"], r["height"], stroke=0, fill=1)
 
         # 2. Group chars by row
@@ -251,26 +270,26 @@ def generate(data: dict,
             if "#REF" in row_text:
                 continue
 
-            # SKIP statik header tops — dinamik chizamiz
             if top_key in HEADER_TOPS:
-                # Faqat label qismini chiz (Год, Месяц so'zlari)
                 for ch in chars:
-                    txt = ch.get("text","")
-                    if not txt.strip() or ch["x0"] >= LABEL_CUTOFF: continue
-                    cv.setFont(resolve_font(ch.get("fontname","")), ch.get("size",6.88))
-                    cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                    txt = ch.get("text", "")
+                    if not txt.strip() or ch["x0"] >= LABEL_CUTOFF:
+                        continue
+                    cv.setFont(resolve_font(ch.get("fontname", "")), ch.get("size", 6.88))
+                    cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
                     cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
-                continue  # raqam qismini skip
+                continue
 
             # Labels
             for ch in chars:
-                txt = ch.get("text","")
-                if not txt.strip() or ch["x0"] >= LABEL_CUTOFF: continue
-                cv.setFont(resolve_font(ch.get("fontname","")), ch.get("size",6.88))
-                cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                txt = ch.get("text", "")
+                if not txt.strip() or ch["x0"] >= LABEL_CUTOFF:
+                    continue
+                cv.setFont(resolve_font(ch.get("fontname", "")), ch.get("size", 6.88))
+                cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
                 cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
 
-            # ROW_MAP
+            # ROW_MAP match
             best_key, best_dist = None, 9999
             for rk in ROW_MAP:
                 d = abs(top_key - rk)
@@ -280,36 +299,39 @@ def generate(data: dict,
             if best_dist <= 6 and best_key is not None:
                 data_key, fmt_style = ROW_MAP[best_key]
                 values = full.get(data_key)
-                if not values: continue
+                if not values:
+                    continue
 
-                ref = [ch for ch in chars if ch["x0"] < LABEL_CUTOFF and ch.get("text","").strip()]
-                if not ref: ref = chars
-                font     = resolve_font(ref[0].get("fontname","")) if ref else "Rubik"
+                ref = [ch for ch in chars if ch["x0"] < LABEL_CUTOFF and ch.get("text", "").strip()]
+                if not ref:
+                    ref = chars
+                font     = resolve_font(ref[0].get("fontname", "")) if ref else "Rubik"
                 size     = ref[0].get("size", 6.88) if ref else 6.88
-                base_clr = to_color(ref[0].get("non_stroking_color",(0,0,0))) if ref else C_BLACK
+                base_clr = to_color(ref[0].get("non_stroking_color", (0, 0, 0))) if ref else C_BLACK
 
                 if data_key == "raznitsa":
                     base_clr, font = C_RED, "Rubik-Bold"
 
-                dchs = [ch for ch in chars if ch["x0"] >= LABEL_CUTOFF and ch.get("text","").strip()]
+                dchs = [ch for ch in chars if ch["x0"] >= LABEL_CUTOFF and ch.get("text", "").strip()]
                 by   = rl_y(dchs[0]["bottom"]) if dchs else (rl_y(ref[0]["bottom"]) if ref else 0)
 
                 for i, cx in enumerate(col_x):
                     v   = values[i] if i < len(values) else 0.0
                     txt = _fmt(v, fmt_style)
-                    clr = C_RED if (isinstance(v,(int,float)) and v < 0) else base_clr
+                    clr = _value_color(v, data_key, base_clr)
                     cv.setFont(font, size)
                     cv.setFillColor(clr)
                     cv.drawRightString(cx, by, txt)
             else:
                 for ch in chars:
-                    txt = ch.get("text","")
-                    if not txt.strip() or ch["x0"] < LABEL_CUTOFF: continue
-                    cv.setFont(resolve_font(ch.get("fontname","")), ch.get("size",6.88))
-                    cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                    txt = ch.get("text", "")
+                    if not txt.strip() or ch["x0"] < LABEL_CUTOFF:
+                        continue
+                    cv.setFont(resolve_font(ch.get("fontname", "")), ch.get("size", 6.88))
+                    cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
                     cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
 
-        # 4. Dynamic header (yil + oy nomlari)
+        # 4. Dynamic header
         _draw_dynamic_header(cv, col_keys, col_x, page)
 
     cv.save()
