@@ -106,13 +106,30 @@ class ProductionEntry(Document):
         ))
 
     def cancel_stock_entry(self):
-        """Cancel linked Stock Entry"""
-        if self.stock_entry:
-            se = frappe.get_doc("Stock Entry", self.stock_entry)
-            if se.docstatus == 1:
+        """Cancel ALL submitted Stock Entries linked to this Production Entry.
+
+        Atomic: agar biror SE cancel bo'lmasa, frappe.throw qilib PE cancel'ni ham to'xtatadi.
+        """
+        linked = frappe.get_all(
+            "Stock Entry",
+            filters={"custom_production_entry": self.name, "docstatus": 1},
+            pluck="name",
+        )
+
+        if self.stock_entry and self.stock_entry not in linked:
+            if frappe.db.get_value("Stock Entry", self.stock_entry, "docstatus") == 1:
+                linked.append(self.stock_entry)
+
+        for se_name in linked:
+            try:
+                se = frappe.get_doc("Stock Entry", se_name)
                 se.flags.ignore_permissions = True
                 se.cancel()
-                frappe.msgprint(_("Stock Entry {0} cancelled").format(self.stock_entry))
+                frappe.msgprint(_("Stock Entry {0} cancelled").format(se_name))
+            except Exception as e:
+                frappe.throw(
+                    _("Stock Entry {0} bekor qilinmadi: {1}").format(se_name, str(e))
+                )
 
 
 @frappe.whitelist()
