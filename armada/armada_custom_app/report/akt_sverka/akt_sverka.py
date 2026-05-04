@@ -35,18 +35,19 @@ def get_voucher_doctype(voucher_type):
 
 def get_columns():
     return [
-        {"label": "Сана", "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
-        {"label": "Ҳужжат", "fieldname": "voucher_type", "fieldtype": "Data", "width": 150},
-        {"label": "Ҳужжат №", "fieldname": "voucher_no", "fieldtype": "Dynamic Link", "options": "voucher_doctype", "width": 120},
-        {"label": "Маҳсулот номи", "fieldname": "item_name", "fieldtype": "Data", "width": 200},
-        {"label": "Миқдори", "fieldname": "qty", "fieldtype": "Float", "precision": 2, "width": 80},
-        {"label": "Нархи", "fieldname": "rate", "fieldtype": "Currency", "width": 100},
-        {"label": "Валюта", "fieldname": "currency", "fieldtype": "Link", "options": "Currency", "width": 80},
-        {"label": "Кредит", "fieldname": "credit", "fieldtype": "Currency", "width": 120},
-        {"label": "Дебет", "fieldname": "debit", "fieldtype": "Currency", "width": 120},
-        {"label": "Қолдиқ (Кред)", "fieldname": "balance_credit", "fieldtype": "Currency", "width": 120},
-        {"label": "Қолдиқ (Деб)", "fieldname": "balance_debit", "fieldtype": "Currency", "width": 120},
-        {"label": "Коммент", "fieldname": "komment", "fieldtype": "Data", "width": 150},
+        {"label": "Сана",           "fieldname": "posting_date",    "fieldtype": "Date",         "width": 85},
+		{"label": "Ҳужжат", "fieldname": "voucher_type", "fieldtype": "Data", "width": 90},
+        {"label": "Ҳужжат №",       "fieldname": "voucher_no",      "fieldtype": "Dynamic Link", "options": "voucher_doctype", "width": 110},
+        {"label": "Маҳсулот номи",  "fieldname": "item_name",       "fieldtype": "Data",         "width": 180},
+        {"label": "Миқдори",        "fieldname": "qty",             "fieldtype": "Float",        "precision": 2, "width": 50},
+        {"label": "Нархи",          "fieldname": "rate",            "fieldtype": "Currency",     "width": 65},
+        {"label": "Кредит",         "fieldname": "credit",          "fieldtype": "Currency",     "width": 83},
+        {"label": "Дебет",          "fieldname": "debit",           "fieldtype": "Currency",     "width": 83},
+        {"label": "Қолдиқ (Кред)",  "fieldname": "balance_credit",  "fieldtype": "Currency",     "width": 85},
+        {"label": "Қолдиқ (Деб)",   "fieldname": "balance_debit",   "fieldtype": "Currency",     "width": 85},
+        {"label": "Коммент",        "fieldname": "komment",         "fieldtype": "Data",         "width": 290},
+        {"label": "Валюта",         "fieldname": "currency",        "fieldtype": "Link",         "options": "Currency", "width": 65},
+        {"label": "",               "fieldname": "voucher_doctype", "fieldtype": "Data",         "width": 0,  "hidden": 1},
     ]
 
 
