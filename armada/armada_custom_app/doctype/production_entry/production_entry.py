@@ -23,6 +23,7 @@ class ProductionEntry(Document):
         self.set_status("Cancelled")
         self.db_set("status", "Cancelled")
         self.cancel_stock_entry()
+        self.cancel_journal_entry()
 
     def set_status(self, status=None):
         if status:
@@ -59,8 +60,19 @@ class ProductionEntry(Document):
                     self.posting_time
                 )
 
+    def _get_additional_cost_data(self):
+        """Production Additional Cost dan item_to_manufacture uchun ma'lumot olish.
+        Agar topilmasa None qaytaradi."""
+        return frappe.db.get_value(
+            "Production Additional Cost",
+            {"item_code": self.item_to_manufacture},
+            ["name", "amount", "expense_account", "description", "party_type", "party"],
+            as_dict=True
+        )
+
     def create_stock_entry(self):
-        """Submit bo'lganda Stock Entry (Manufacture) yaratish"""
+        """Submit bo'lganda Stock Entry (Manufacture) yaratish.
+        Agar item Production Additional Cost da bo'lsa — additional_costs ham qo'shiladi."""
         se = frappe.new_doc("Stock Entry")
         se.stock_entry_type = "Manufacture"
         se.posting_date = self.posting_date
@@ -94,6 +106,19 @@ class ProductionEntry(Document):
             "conversion_factor": 1
         })
 
+        # Additional costs — agar item Production Additional Cost da bo'lsa
+        additional_cost = self._get_additional_cost_data()
+        total_additional = 0
+
+        if additional_cost:
+            total_additional = flt(additional_cost.amount) * flt(self.qty_to_manufacture)
+            se.append("additional_costs", {
+                "expense_account": additional_cost.expense_account,
+                "description": additional_cost.description
+                    or f"Production cost for {self.item_to_manufacture}",
+                "amount": total_additional,
+            })
+
         se.flags.ignore_permissions = True
         se.insert()
         se.submit()
@@ -104,6 +129,98 @@ class ProductionEntry(Document):
         frappe.msgprint(_("Stock Entry {0} created").format(
             frappe.utils.get_link_to_form("Stock Entry", se.name)
         ))
+
+        # Journal Entry — faqat additional cost mavjud bo'lsa
+        if additional_cost:
+            self.create_production_journal_entry(additional_cost, total_additional)
+
+    def create_production_journal_entry(self, cost_data, total_amount):
+        """Production additional cost uchun Journal Entry yaratish.
+
+        Debit:  expense_account (masalan 5233 - Услуги)
+        Credit: party account  (masalan 2110 - Creditors yoki 2120 - Payroll)
+        """
+        je = frappe.new_doc("Journal Entry")
+        je.voucher_type = "Journal Entry"
+        je.posting_date = self.posting_date
+        je.company = self.company
+        je.cheque_no = self.name
+        je.cheque_date = self.posting_date
+        je.user_remark = (
+            f"Production cost for {self.item_to_manufacture} "
+            f"(qty {self.qty_to_manufacture}) — {self.name}"
+        )
+
+        # Row 1 — Debit: expense account
+        je.append("accounts", {
+            "account": cost_data.expense_account,
+            "debit_in_account_currency": total_amount,
+            "debit": total_amount,
+        })
+
+        # Row 2 — Credit: party account
+        party_account = self._get_party_account(cost_data.party_type)
+        je.append("accounts", {
+            "account": party_account,
+            "credit_in_account_currency": total_amount,
+            "credit": total_amount,
+            "party_type": cost_data.party_type,
+            "party": cost_data.party,
+        })
+
+        je.flags.ignore_permissions = True
+        je.insert()
+        je.submit()
+
+        self.db_set("journal_entry", je.name)
+
+        frappe.msgprint(_("Journal Entry {0} created").format(
+            frappe.utils.get_link_to_form("Journal Entry", je.name)
+        ))
+
+    def _get_party_account(self, party_type):
+        """Party type ga qarab creditor accountni olish.
+
+        Supplier  → 2110
+        Employee  → 2120
+        """
+        account_map = {
+            "Supplier": "2110",
+            "Employee": "2120",
+        }
+        account_number = account_map.get(party_type)
+        if not account_number:
+            frappe.throw(_("Unsupported party type: {0}").format(party_type))
+
+        account = frappe.db.get_value(
+            "Account",
+            {"company": self.company, "account_number": account_number, "is_group": 0},
+            "name"
+        )
+        if not account:
+            frappe.throw(
+                _("Account {0} not found for company {1}").format(account_number, self.company)
+            )
+        return account
+
+    def cancel_journal_entry(self):
+        """Bog'langan Journal Entry ni cancel qilish"""
+        if not self.journal_entry:
+            return
+
+        je_docstatus = frappe.db.get_value("Journal Entry", self.journal_entry, "docstatus")
+        if je_docstatus == 1:
+            try:
+                je = frappe.get_doc("Journal Entry", self.journal_entry)
+                je.flags.ignore_permissions = True
+                je.cancel()
+                frappe.msgprint(_("Journal Entry {0} cancelled").format(self.journal_entry))
+            except Exception as e:
+                frappe.throw(
+                    _("Journal Entry {0} cancel bo'lmadi: {1}").format(
+                        self.journal_entry, str(e)
+                    )
+                )
 
     def cancel_stock_entry(self):
         """Cancel ALL submitted Stock Entries linked to this Production Entry.

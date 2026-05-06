@@ -25,7 +25,8 @@
   "section_break_remarks",
   "remarks",
   "amended_from",
-  "stock_entry"
+  "stock_entry",
+  "journal_entry"
  ],
  "fields": [
   {
@@ -161,6 +162,13 @@
    "label": "Stock Entry",
    "options": "Stock Entry",
    "read_only": 1
+  },
+  {
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "label": "Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
@@ -169,6 +177,10 @@
   {
    "link_doctype": "Stock Entry",
    "link_fieldname": "custom_production_entry"
+  },
+  {
+   "link_doctype": "Journal Entry",
+   "link_fieldname": "cheque_no"
   }
  ],
  "modified": "2025-02-05 10:00:00.000000",
