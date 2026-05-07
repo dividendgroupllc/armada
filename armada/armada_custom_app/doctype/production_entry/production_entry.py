@@ -237,10 +237,11 @@ class ProductionEntry(Document):
             if frappe.db.get_value("Stock Entry", self.stock_entry, "docstatus") == 1:
                 linked.append(self.stock_entry)
 
-        for se_name in linked:
+        for se_name in sorted(linked):
             try:
                 se = frappe.get_doc("Stock Entry", se_name)
                 se.flags.ignore_permissions = True
+                se.ignore_linked_doctypes = ("Production Entry",)
                 se.cancel()
                 frappe.msgprint(_("Stock Entry {0} cancelled").format(se_name))
             except Exception as e:
