@@ -8,9 +8,19 @@
  *  2. Category Reorder   — Drag-and-drop dialog (SortableJS, Frappe v15 built-in)
  *                          Persists to DB via save_category_order()
  *                          Visible to all, editable only by kassa admin / Accounts Manager / System Manager
+ *  3. Tree mode          — Categories collapsible; click ">" to expand and see accounts.
+ *                          Default: all categories collapsed.
  */
 
 frappe.query_reports["Direct Cash Flow"] = {
+
+    // -------------------------------------------------------------------------
+    // TREE MODE CONFIG
+    // -------------------------------------------------------------------------
+    tree:          true,
+    name_field:    "_id",        // unique per row (category vs account)
+    parent_field:  "parent",     // accounts point to category_name; everything else null
+    initial_depth: 0,            // all categories collapsed on first render
 
     // -------------------------------------------------------------------------
     // FILTERS
@@ -177,7 +187,7 @@ frappe.query_reports["Direct Cash Flow"] = {
             }
         }
 
-        // ── Data rows ──
+        // ── Data rows (parent categories) ──
         if (data.row_type === "data") {
             const isInflow = data.is_inflow === 1;
 
@@ -197,6 +207,31 @@ frappe.query_reports["Direct Cash Flow"] = {
                         value = `<span style="color:#C0392B;font-weight:700;">(${fmtRounded(v)})</span>`;
                     } else {
                         value = `<span style="color:#27AE60;font-weight:700;">${fmtRounded(v)}</span>`;
+                    }
+                }
+            }
+        }
+
+        // ── Account rows (child of category) ──
+        if (data.row_type === "account") {
+            const isInflow = data.is_inflow === 1;
+
+            if (fieldname === "label") {
+                const lbl   = (data.label || "").trim();
+                const color = isInflow ? "#27AE60" : "#C0392B";
+                // Lighter weight than parent; no +/- prefix to keep child rows visually quieter
+                value = `<span style="color:${color};font-weight:500;font-style:italic;">${frappe.utils.escape_html(lbl)}</span>`;
+            }
+
+            if (column.fieldtype === "Currency" && raw !== null) {
+                const v = parseFloat(raw);
+                if (!isNaN(v)) {
+                    if (v === 0) {
+                        value = `<span style="color:#7F8C8D;font-weight:500;">0</span>`;
+                    } else if (v < 0) {
+                        value = `<span style="color:#C0392B;font-weight:500;">(${fmtRounded(v)})</span>`;
+                    } else {
+                        value = `<span style="color:#27AE60;font-weight:500;">${fmtRounded(v)}</span>`;
                     }
                 }
             }

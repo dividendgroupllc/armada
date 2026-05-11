@@ -11,6 +11,10 @@ Reorder API   : save_category_order()   — drag-and-drop persistence
                get_categories_for_reorder() — dialog data loader
 Concurrency   : Single writer model (kassa admin / System Manager only)
                Readers get fresh order on next cache expiry (≤5 min)
+
+Tree mode     : Categories are parent rows, Accounts are child rows.
+               Default: all categories collapsed.
+               PDF export: account rows are excluded (categories only).
 """
 
 from __future__ import unicode_literals
@@ -53,8 +57,12 @@ def execute(filters=None):
     )
 
     movements = get_all_movements(filters, cash_accounts)
-    aggregated, unmapped = aggregate_movements(movements, account_map, periods)
-    data = build_report_rows(aggregated, account_map, periods, period_openings)
+    aggregated, account_aggregated, unmapped = aggregate_movements(
+        movements, account_map, periods
+    )
+    data = build_report_rows(
+        aggregated, account_aggregated, account_map, periods, period_openings
+    )
 
     if unmapped:
         frappe.log_error(
@@ -184,7 +192,7 @@ def get_columns(periods):
         "fieldname": "label",
         "label":     _("Category"),
         "fieldtype": "Data",
-        "width":     250,
+        "width":     320,
     }]
     for p in periods:
         cols.append({
@@ -401,8 +409,15 @@ def get_period_key(posting_date, periods):
 # ---------------------------------------------------------------------------
 
 def aggregate_movements(movements, account_map, periods):
-    result   = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    unmapped = []
+    """
+    Returns:
+      result            : aggregated[activity][parent_name][period_key]  — category totals
+      account_result    : account_aggregated[parent_name][account][period_key] — per-account
+      unmapped          : list of unmapped movements
+    """
+    result         = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    account_result = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    unmapped       = []
 
     for m in movements:
         if m["source"] == "PE":
@@ -425,9 +440,11 @@ def aggregate_movements(movements, account_map, periods):
 
         amount = flt(m["amount"])
         signed = amount if cat["is_inflow"] else -amount
-        result[cat["activity_type"]][cat["parent_name"]][period_key] += signed
 
-    return result, unmapped
+        result[cat["activity_type"]][cat["parent_name"]][period_key] += signed
+        account_result[cat["parent_name"]][mapping_account][period_key] += signed
+
+    return result, account_result, unmapped
 
 
 # ---------------------------------------------------------------------------
@@ -447,11 +464,12 @@ ACTIVITY_LABELS = {
 }
 
 
-def build_report_rows(aggregated, account_map, periods, period_openings):
+def build_report_rows(aggregated, account_aggregated, account_map, periods, period_openings):
     rows = []
 
     opening_row = {
         "label": "Денег на начало месяца",
+        "indent": 0,
         "is_balance_row": True,
         "row_type": "balance",
     }
@@ -460,6 +478,9 @@ def build_report_rows(aggregated, account_map, periods, period_openings):
     rows.append(opening_row)
 
     net = defaultdict(float)
+
+    # Build per-category account list (sorted by account name for stable display)
+    accounts_by_category = _accounts_by_category(account_map)
 
     for activity in ACTIVITY_ORDER:
         cats_in_activity = sorted(
@@ -473,21 +494,58 @@ def build_report_rows(aggregated, account_map, periods, period_openings):
         activity_period_totals = defaultdict(float)
 
         for cat in cats_in_activity:
-            parent_name = cat["parent_name"]
-            period_data = aggregated.get(activity, {}).get(parent_name, {})
-            row = {"label": cat["category_name"], "row_type": "data", "is_inflow": cint(cat["is_inflow"])}
+            parent_name   = cat["parent_name"]
+            category_name = cat["category_name"]
+            period_data   = aggregated.get(activity, {}).get(parent_name, {})
+
+            # ── Parent (category) row ─────────────────────────────────────
+            category_row = {
+                "label":     category_name,
+                "indent":    0,
+                "row_type":  "data",
+                "is_inflow": cint(cat["is_inflow"]),
+                "_id":       category_name,
+                "parent":    None,
+                "has_value": True,
+            }
             for p in periods:
                 val = flt(period_data.get(p["key"], 0))
-                row[p["key"]] = val
+                category_row[p["key"]] = val
                 activity_period_totals[p["key"]] += val
                 net[p["key"]] += val
-            rows.append(row)
+            rows.append(category_row)
+
+            # ── Child (account) rows ──────────────────────────────────────
+            # NOTE: account amounts are already signed during aggregation,
+            # so the sum of children equals the category total — no double counting.
+            for acc in accounts_by_category.get(parent_name, []):
+                acc_period_data = account_aggregated.get(parent_name, {}).get(acc, {})
+
+                # Skip accounts that have zero movement in every period
+                # (purely cosmetic — declutters the tree).
+                if not any(flt(acc_period_data.get(p["key"], 0)) for p in periods):
+                    continue
+
+                acc_info = account_map.get(acc, {})
+                acc_row = {
+                    "label":     acc,
+                    "indent":    1,
+                    "row_type":  "account",
+                    "is_inflow": cint(acc_info.get("is_inflow", -1)),
+                    "_id":       f"{category_name}::{acc}",
+                    "parent":    category_name,
+                    "has_value": True,
+                }
+                for p in periods:
+                    acc_row[p["key"]] = flt(acc_period_data.get(p["key"], 0))
+                rows.append(acc_row)
 
         rows.append(_subtotal_row(activity, activity_period_totals, periods))
         rows.append(_spacer_row())
 
     closing_row = {
         "label": "Денег на конец месяца",
+        "indent": 0,
         "is_balance_row": True,
         "row_type": "balance",
     }
@@ -517,13 +575,29 @@ def _unique_categories(account_map):
     return seen
 
 
+def _accounts_by_category(account_map):
+    """Group accounts by their parent category name, sorted alphabetically."""
+    grouped = defaultdict(list)
+    for acc, info in account_map.items():
+        grouped[info["parent_name"]].append(acc)
+    for parent in grouped:
+        grouped[parent].sort()
+    return grouped
+
+
 def _header_row(label):
-    return {"label": label, "is_activity_header": True, "row_type": "header"}
+    return {
+        "label": label,
+        "indent": 0,
+        "is_activity_header": True,
+        "row_type": "header",
+    }
 
 
 def _subtotal_row(activity, period_totals, periods):
     row = {
         "label":       f"Итого: {activity}",
+        "indent":      0,
         "is_subtotal": True,
         "row_type":    "subtotal",
     }
@@ -533,7 +607,7 @@ def _subtotal_row(activity, period_totals, periods):
 
 
 def _spacer_row():
-    return {"label": "", "row_type": "spacer"}
+    return {"label": "", "indent": 0, "row_type": "spacer"}
 
 
 # ---------------------------------------------------------------------------
@@ -705,6 +779,9 @@ def export_pdf(filters=None):
     """
     Whitelisted endpoint called from the JS 'Экспорт PDF' button.
     Returns base64-encoded landscape-A4 PDF for client-side blob download.
+
+    NOTE: account-level rows (row_type='account') are explicitly excluded
+          from the PDF output — PDF stays category-level only.
     """
     import json
     import base64
@@ -716,6 +793,10 @@ def export_pdf(filters=None):
     validate_filters(filters)
 
     columns, data = execute(filters)
+
+    # ── Strip account-level rows for PDF (categories-only view) ──────────
+    data = [r for r in data if r.get("row_type") != "account"]
+
     html = _build_pdf_html(columns, data, filters)
 
     from frappe.utils.pdf import get_pdf
