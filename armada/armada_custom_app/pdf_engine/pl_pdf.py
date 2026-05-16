@@ -100,12 +100,32 @@ ROW_MAP = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CHANGED: _fmt() — all numeric styles now output whole numbers (no decimals)
+# Logic (_derive, generate, ROW_MAP) is untouched.
+# ─────────────────────────────────────────────────────────────────────────────
 def _fmt(v, style):
-    if style == "dollar":  return f"${v:,.2f}"
-    if style == "pct":     return f"{int(round(v))}%"
-    if style == "pct_dec": return f"{v:.2f}%"
-    if style == "plain":   return f"{v:.2f}"
-    return f"{v:,.2f}"
+    """Format a value for display — whole numbers only."""
+    rv = int(round(v)) if isinstance(v, (int, float)) else 0
+
+    if style == "dollar":
+        # Negative → ($123,456)  |  Positive → $123,456
+        return f"${rv:,}"
+
+    if style == "pct":
+        return f"{rv}%"
+
+    if style == "pct_dec":
+        # Was: f"{v:.2f}%"  →  Now: whole percent
+        return f"{rv}%"
+
+    if style == "plain":
+        # Was: f"{v:.2f}"  →  Now: comma-separated integer
+        return f"{rv:,}"
+
+    # "num" — pl_pdf uses color (red) for negatives, not parentheses
+    # Was: f"{v:,.2f}"
+    return f"{rv:,}"
 
 
 def _derive(data, n):
@@ -191,7 +211,6 @@ def _draw_dynamic_header(cv, col_keys, col_x, page):
     for ch in page.chars:
         chars_by_top[round(ch["top"])].append(ch)
 
-    # Год row (top~47)
     year_row_chars = chars_by_top.get(47, [])
     if year_row_chars:
         ref = [c for c in year_row_chars if c.get("text", "").strip() and c["x0"] < LABEL_CUTOFF]
@@ -207,7 +226,6 @@ def _draw_dynamic_header(cv, col_keys, col_x, page):
                     cv.setFillColor(clr)
                     cv.drawRightString(cx, by, year)
 
-    # Месяц row (top~59)
     month_row_chars = chars_by_top.get(59, [])
     if month_row_chars:
         ref = [c for c in month_row_chars if c.get("text", "").strip() and c["x0"] < LABEL_CUTOFF]
@@ -242,7 +260,6 @@ def generate(data: dict,
     with pdfplumber.open(template) as pdf:
         page = pdf.pages[0]
 
-        # 1. Backgrounds
         cv.setFillColor(C_WHITE)
         cv.rect(0, 0, 842, 1191, stroke=0, fill=1)
 
@@ -253,17 +270,15 @@ def generate(data: dict,
             if clr is None:
                 continue
             if _is_red_rect(clr):
-                cv.setFillColor(Color(0.72, 0.15, 0.08))
+                cv.setFillColor(Color(0.85, 0.11, 0.11))
             else:
                 cv.setFillColor(to_color(clr))
             cv.rect(r["x0"], rl_y(r["bottom"]), r["width"], r["height"], stroke=0, fill=1)
 
-        # 2. Group chars by row
         rows = defaultdict(list)
         for ch in page.chars:
             rows[round(ch["top"])].append(ch)
 
-        # 3. Draw rows
         for top_key in sorted(rows.keys()):
             chars = rows[top_key]
             row_text = "".join(ch.get("text", "") for ch in chars)
@@ -280,7 +295,6 @@ def generate(data: dict,
                     cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
                 continue
 
-            # Labels
             for ch in chars:
                 txt = ch.get("text", "")
                 if not txt.strip() or ch["x0"] >= LABEL_CUTOFF:
@@ -289,7 +303,6 @@ def generate(data: dict,
                 cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
                 cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
 
-            # ROW_MAP match
             best_key, best_dist = None, 9999
             for rk in ROW_MAP:
                 d = abs(top_key - rk)
@@ -331,7 +344,6 @@ def generate(data: dict,
                     cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
                     cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
 
-        # 4. Dynamic header
         _draw_dynamic_header(cv, col_keys, col_x, page)
 
     cv.save()

@@ -99,7 +99,8 @@ app_include_js = [
 	"/assets/armada/js/report_formatter.js",
 	"/assets/armada/js/pl_pdf_button.js",
 	"/assets/armada/js/balance_sheet_pdf.js",
-	"/assets/armada/js/report_overrides.js"
+	"/assets/armada/js/report_overrides.js",
+	"/assets/armada/js/cash_flow_formatter.js",
 ]
 
 # include js, css files in header of desk.html
