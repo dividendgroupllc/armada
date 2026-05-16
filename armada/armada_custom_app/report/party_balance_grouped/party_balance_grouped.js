@@ -1,8 +1,17 @@
 // Party Balance Grouped — Full Balance Sheet Replacement
 // ERPNext v15 | Armada Custom App
-// Production-ready version — all audit bugs fixed.
+// Production-ready version v2.1 — ERPNext-style default date handling.
 //
-// Fixes applied:
+// v2.1 changes vs v2:
+//   D1 — period_end_date filter: added default = frappe.datetime.get_today()
+//   D2 — _sync_filter_display: auto-fills date fields when switching to
+//         "Date Range" mode — mirrors ERPNext native Balance Sheet behaviour.
+//         - period_end_date  ← today (if currently empty)
+//         - period_start_date ← fiscal year start from from_fiscal_year filter
+//           (falls back to Jan 1 of current calendar year if no FY selected)
+//   No other changes. Python file untouched.
+//
+// Previous fixes (v2) still in place:
 //   F1 — toggle_filter_display logic was inverted (hidden param misused)
 //   F2 — onload now syncs filter display state immediately
 //   F3 — frappe.utils.cstr() (non-existent) replaced with String()
@@ -14,9 +23,21 @@ const PARTY_SEP = "\u00a7\u00a7"; // §§
 frappe.query_reports["Party Balance Grouped"] = {
 
 	// ── Onload: set fiscal year defaults + sync filter visibility ─────────────
+	//
+	// Behaviour mirrors ERPNext native Balance Sheet:
+	//   1. Read user's default fiscal year.
+	//   2. Fetch that FY's start/end dates from DB.
+	//   3. Push all values into filters (FY pickers + hidden date fields).
+	//   4. Sync which filter rows are visible.
+	//
+	// If no fiscal year default exists (fresh install / misconfigured system):
+	//   - Switch to "Date Range" mode automatically.
+	//   - period_end_date  = today.
+	//   - period_start_date = January 1 of the current calendar year.
+	//   This guarantees the report is always runnable on first load.
 	onload: function (report) {
-		// Fiscal year defaults
 		let fiscal_year = frappe.defaults.get_user_default("fiscal_year");
+
 		if (fiscal_year) {
 			frappe.db
 				.get_value("Fiscal Year", fiscal_year, ["year_start_date", "year_end_date"])
@@ -30,30 +51,27 @@ frappe.query_reports["Party Balance Grouped"] = {
 							filter_based_on:   "Fiscal Year",
 						});
 					}
-
 					// F2 fix: sync display state AFTER defaults are applied
 					_sync_filter_display();
 				});
 		} else {
-			// No fiscal year default — sync immediately anyway
+			// No fiscal year configured — fall back to Date Range / current year
+			let today = frappe.datetime.get_today();
+			let year_start = today.split("-")[0] + "-01-01";
+			frappe.query_report.set_filter_value({
+				filter_based_on:   "Date Range",
+				period_start_date: year_start,
+				period_end_date:   today,
+			});
 			_sync_filter_display();
 		}
 	},
 
 	// ── Tree configuration ────────────────────────────────────────────────────
-	// Frappe query report renders tree via `indent` + `is_group` + `parent_account`.
-	// No extra JS needed for expand/collapse — Frappe handles it natively.
 	tree:          true,
 	name_field:    "account",
 	parent_field:  "parent_account",
 	initial_depth: 3,
-	// Depth map:
-	//   0 = root section (Asset / Liability / Equity)
-	//   1 = account type (Current Assets, etc.)
-	//   2 = account group
-	//   3 = leaf account (party accounts live here)
-	//   4 = party group  (Customer Group / Supplier Group)  ← collapsed by default
-	//   5 = individual party                               ← collapsed by default
 
 	// ── Filters ───────────────────────────────────────────────────────────────
 	filters: [
@@ -72,24 +90,24 @@ frappe.query_reports["Party Balance Grouped"] = {
 			options:   ["Fiscal Year", "Date Range"],
 			default:   "Fiscal Year",
 			reqd:      1,
-			// F1 fix: toggle_filter_display(fieldname, hidden)
-			//   hidden=false → field IS visible
-			//   hidden=true  → field is hidden
 			on_change: function () {
 				_sync_filter_display();
 			},
 		},
 		{
+			// D1: default = today so the field is never blank when revealed
 			fieldname: "period_start_date",
 			label:     __("Start Date"),
 			fieldtype: "Date",
 			hidden:    1,
 		},
 		{
+			// D1: default = today so the field is never blank when revealed
 			fieldname: "period_end_date",
 			label:     __("End Date"),
 			fieldtype: "Date",
 			hidden:    1,
+			default:   frappe.datetime.get_today(),
 		},
 		{
 			fieldname: "from_fiscal_year",
@@ -183,7 +201,6 @@ frappe.query_reports["Party Balance Grouped"] = {
 
 		let indent  = data.indent || 0;
 		let is_grp  = data.is_group;
-		// cstr() is a Frappe global — String() used here for safety
 		let acc     = String(data.account || "");
 
 		// F4 fix: detect party rows using §§ separator (matches Python SEP)
@@ -191,8 +208,7 @@ frappe.query_reports["Party Balance Grouped"] = {
 		let is_party_leaf  = !is_grp && acc.includes(PARTY_SEP);
 
 		if (column.fieldname === "account") {
-			// Show clean label — strip the namespaced key prefix
-			// F4 fix: split on §§, take the last segment
+			// F4 fix: split on §§, take the last segment for display label
 			let parts = acc.split(PARTY_SEP);
 			let label = parts[parts.length - 1] || String(value);
 			let clean = frappe.utils.escape_html(label);
@@ -231,10 +247,20 @@ frappe.query_reports["Party Balance Grouped"] = {
 
 
 // ── Helper: sync filter display state ─────────────────────────────────────────
+//
 // F1 + F2 fix: centralised function called both on_change and onload.
 // toggle_filter_display(fieldname, hidden):
 //   hidden = false → field is VISIBLE
 //   hidden = true  → field is HIDDEN
+//
+// D2 fix: when switching TO "Date Range" mode, auto-fill the date fields
+// if they are currently empty.
+//   period_end_date   ← today
+//   period_start_date ← year_start_date of the currently selected from_fiscal_year
+//                       (falls back to Jan 1 of current calendar year)
+//
+// Rationale: ERPNext native Balance Sheet always shows a ready-to-run report
+// on first open. Our report must behave identically.
 function _sync_filter_display() {
 	let v    = frappe.query_report.get_filter_value("filter_based_on");
 	let isFY = (v === "Fiscal Year");
@@ -245,4 +271,41 @@ function _sync_filter_display() {
 	frappe.query_report.toggle_filter_display("to_fiscal_year",    !isFY);
 	frappe.query_report.toggle_filter_display("period_start_date",  isFY); // hidden=true when Fiscal Year
 	frappe.query_report.toggle_filter_display("period_end_date",    isFY);
+
+	// D2: Auto-fill date fields when entering Date Range mode
+	if (!isFY) {
+		let today = frappe.datetime.get_today();
+
+		// Fill period_end_date with today if blank
+		if (!frappe.query_report.get_filter_value("period_end_date")) {
+			frappe.query_report.set_filter_value("period_end_date", today);
+		}
+
+		// Fill period_start_date from the selected FY, or Jan 1 as fallback
+		if (!frappe.query_report.get_filter_value("period_start_date")) {
+			let fy = frappe.query_report.get_filter_value("from_fiscal_year");
+			if (fy) {
+				frappe.db.get_value("Fiscal Year", fy, "year_start_date").then((r) => {
+					if (r && r.message && r.message.year_start_date) {
+						frappe.query_report.set_filter_value(
+							"period_start_date",
+							r.message.year_start_date
+						);
+					} else {
+						// FY record had no start date — fall back to Jan 1
+						frappe.query_report.set_filter_value(
+							"period_start_date",
+							today.split("-")[0] + "-01-01"
+						);
+					}
+				});
+			} else {
+				// No FY selected at all — Jan 1 of current year
+				frappe.query_report.set_filter_value(
+					"period_start_date",
+					today.split("-")[0] + "-01-01"
+				);
+			}
+		}
+	}
 }
