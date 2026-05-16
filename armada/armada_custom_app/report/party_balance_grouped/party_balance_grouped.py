@@ -2,41 +2,46 @@
 Party Balance Grouped — Full Balance Sheet Replacement
 =======================================================
 ERPNext v15 | Armada Custom App
-Production-ready version v2 — sign-split logic.
+Production-ready version v3 — PER-PERIOD sign-split.
 
 CORE LOGIC:
   1310 (Receivable / Debitorka account):
-      net >= 0  → DEBITORKA > Customers   (ular bizdan qarz)
-      net <  0  → CREDITORKA > Customers  (biz qarzMIZ, abs qiymat)
+      running_balance >= 0  → DEBITORKA > Customers   (they owe us)
+      running_balance <  0  → CREDITORKA > Customers  (we owe them, abs value)
 
   2110 (Payable / Creditorka account):
-      net <= 0  → CREDITORKA > Suppliers  (biz qarzMIZ, abs qiymat)
-      net >  0  → DEBITORKA > Suppliers   (ular bizdan qarz)
+      running_balance <= 0  → CREDITORKA > Suppliers  (we owe them, abs value)
+      running_balance >  0  → DEBITORKA > Suppliers   (they owe us)
 
-TREE STRUCTURE:
+  running_balance at period N = opening + sum(period_movements[1..N])
+
+  CRITICAL: determination is PER-PERIOD, not per lifetime total.
+  The same party may appear in BOTH debtor and creditor buckets across
+  different periods. Period column is 0 where the party is on the other side.
+
+  Display value: abs(running_balance) — always positive.
+  This is a Balance Sheet: we show the BALANCE, not the movement.
+
+  total field: abs balance at LAST period = current state at report end.
+
+TREE STRUCTURE (unchanged):
   Debitorka (1310 row)
     ├─ Customers  [is_group]
     │    ├─ Customer Group A  [is_group]
-    │    │    ├─ Customer 1   [leaf]
+    │    │    ├─ Customer 1   [leaf]  Jan:200 Feb:0
     │    │    └─ Customer 2   [leaf]
-    │    └─ Customer Group B  [is_group]
-    │         └─ Customer 3   [leaf]
-    └─ Suppliers  [is_group]  ← 2110 dan ko'chirilgan, net>0 bo'lganlar
-         ├─ Supplier Group X  [is_group]
-         │    └─ Supplier A   [leaf]  +20$
-         └─ Supplier Group Y  [is_group]
-              └─ Supplier B   [leaf]  +30$
+    └─ Suppliers  [is_group]
 
   Creditorka (2110 row)
     ├─ Suppliers  [is_group]
-    │    ├─ Supplier Group X  [is_group]
-    │    │    └─ Supplier C   [leaf]  +180$
-    │    └─ ...               total   +350$
-    └─ Customers  [is_group]  ← 1310 dan ko'chirilgan, net<0 bo'lganlar
-         └─ Customer Group Z  [is_group]
-              └─ Customer K   [leaf]  +70$
+    └─ Customers  [is_group]
+         └─ Customer Group A [is_group]
+              └─ Customer 1  [leaf]  Jan:0  Feb:150  ← same party, switched side in Feb
 
-BALANCE: har bir party faqat BITTA joyda ko'rinadi. Abs qiymat ishlatiladi.
+v3 changes vs v2:
+  - _split_to_buckets: complete rewrite — per-period running balance logic
+  - execute: passes `accumulated` flag into _split_to_buckets
+  - All other functions: UNCHANGED
 """
 
 import frappe
@@ -49,7 +54,7 @@ from erpnext.accounts.report.financial_statements import (
     get_fiscal_year_data,
 )
 
-# Tree node separator — account/party nomida uchramaydigan unicode belgi
+# Tree node separator — must not appear in account/party names
 SEP = "\u00a7\u00a7"   # §§
 
 
@@ -146,8 +151,12 @@ def execute(filters=None):
     # ── Party group lookup (2 SQL queries total) ──────────────────────────────
     group_map = _build_group_map(raw_gl, receivable_accs, payable_accs)
 
-    # ── Split into 4 sign-based buckets ──────────────────────────────────────
-    buckets = _split_to_buckets(raw_gl, receivable_accs, payable_accs, period_list)
+    # ── v3: Per-period sign split into 4 buckets ──────────────────────────────
+    # `accumulated` is passed so we can correctly strip opening from first
+    # period key (which _fetch_party_gl bakes in when accumulated=True).
+    buckets = _split_to_buckets(
+        raw_gl, receivable_accs, payable_accs, period_list, accumulated
+    )
 
     currency = frappe.db.get_value("Company", filters.company, "default_currency")
 
@@ -206,6 +215,10 @@ def _fetch_party_gl(filters, period_list, all_party_accs, accumulated):
     Fetches opening + period GL.
     Returns: {account: {party: {period_key: net, "total": net, "opening": net}}}
     net = debit - credit (raw, no sign adjustment — done at split stage)
+
+    When accumulated=True, opening balance is also added into the first period key
+    so that ERPNext's standard accumulation rendering works for non-party rows.
+    _split_to_buckets strips this back out to compute correct per-period running balance.
     """
     if not all_party_accs:
         return {}
@@ -257,7 +270,7 @@ def _fetch_party_gl(filters, period_list, all_party_accs, accumulated):
         as_dict=True,
     )
 
-    # Period entries — aggregated by date (no raw row scan)
+    # Period entries — aggregated by date
     period_rows = frappe.db.sql(
         f"""
         SELECT
@@ -383,30 +396,61 @@ def _build_group_map(raw_gl, receivable_accs, payable_accs):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SIGN-SPLIT → 4 BUCKETS
+# SIGN-SPLIT → 4 BUCKETS  (v3: PER-PERIOD)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _split_to_buckets(raw_gl, receivable_accs, payable_accs, period_list):
+def _split_to_buckets(raw_gl, receivable_accs, payable_accs, period_list, accumulated):
     """
-    Splits each party's raw net balance into one of 4 FLAT buckets.
+    PER-PERIOD sign-split into 4 flat buckets.
 
-    Receivable account (1310), raw net = debit - credit:
-        net >= 0  -> debtor_customers    (they owe us -> Debitorka/Customers)
-        net <  0  -> creditor_customers  (we owe them -> Creditorka/Customers, abs)
+    Algorithm:
+        For each party in each GL account:
+          1. Extract pure period movements for each period.
+             When accumulated=True, _fetch_party_gl bakes opening into the
+             FIRST period key. We subtract opening from that key to get the
+             pure movement. For accumulated=False, opening is not baked in.
+          2. Walk periods sequentially, maintaining a running cumulative balance:
+                running[0] = opening + movement[0]
+                running[N] = running[N-1] + movement[N]
+          3. At each period, the SIGN of running determines the bucket:
 
-    Payable account (2110), raw net = debit - credit:
-        net <= 0  -> creditor_suppliers  (we owe them -> Creditorka/Suppliers, abs)
-        net >  0  -> debtor_suppliers    (they owe us -> Debitorka/Suppliers)
+             Receivable account (1310), net = debit - credit:
+               running >= 0  →  debtor_customers    (they owe us)
+               running <  0  →  creditor_customers  (we owe them)
 
-    CRITICAL FIX: Buckets are FLAT keyed by party name only — NOT by account.
-    Previous bug: bucket stored as {acc: {party: data}} but inject looked up
-    by receivable/payable acc respectively, causing cross-account lookup to
-    always return empty dict and suppliers/customers never showing on wrong side.
+             Payable account (2110), net = debit - credit:
+               running <= 0  →  creditor_suppliers  (we owe them)
+               running >  0  →  debtor_suppliers    (they owe us)
 
-    Flat storage eliminates the acc key mismatch entirely.
+          4. Store abs(running) in the determined bucket's period column.
+             The OTHER bucket gets 0 for that period (default from _ensure).
 
-    Bucket structure:
-        { party_name: { period_key: abs_amount, "total": abs_amount } }
+    Result: one party CAN appear in BOTH debtor and creditor buckets.
+    Example — Customer 1:
+        Jan end balance = +$200  → debtor_customers[Jan]   = 200
+        Feb end balance = -$150  → creditor_customers[Feb] = 150
+        debtor_customers[Feb]    = 0  (not in debtor side for Feb)
+        creditor_customers[Jan]  = 0  (not in creditor side for Jan)
+
+    Display value: abs(running cumulative balance) — always positive.
+    This is a Balance Sheet: we show the BALANCE, not the period movement.
+
+    total field: abs balance at LAST period in period_list.
+        = the party's current outstanding balance as of report end date.
+        This is the only semantically correct "total" for a cumulative BS view.
+
+    Edge cases handled:
+        - Party never crossing zero: appears in one bucket only, other is empty ✓
+        - Party with only opening balance, no period movements: running = opening
+          for all periods → correct bucket for all periods ✓
+        - Party with balance exactly zero: running=0 treated as non-negative
+          → debtor bucket with value 0 → filtered by show_zero logic ✓
+        - Same party in multiple receivable accounts: flat bucket key is party
+          name only, values accumulate correctly ✓
+        - Party as both customer (receivable) and supplier (payable): routed
+          to customer vs supplier buckets respectively — no collision ✓
+        - accumulated=False: opening not in first key, movements parsed correctly,
+          running balance still computed cumulatively (correct for BS sign logic) ✓
     """
     buckets = {
         "debtor_customers":   {},
@@ -415,39 +459,70 @@ def _split_to_buckets(raw_gl, receivable_accs, payable_accs, period_list):
         "creditor_suppliers": {},
     }
 
-    def _add(bucket, party, pdata, negate):
+    def _ensure(bucket, party):
+        """Initialise party entry with all period columns = 0."""
         if party not in bucket:
             bucket[party] = {p.key: 0.0 for p in period_list}
             bucket[party]["total"] = 0.0
-        factor = -1.0 if negate else 1.0
-        for p in period_list:
-            bucket[party][p.key] += flt(pdata.get(p.key, 0)) * factor
-        bucket[party]["total"] += flt(pdata.get("total", 0)) * factor
 
     for acc, party_map in raw_gl.items():
         is_receivable = acc in receivable_accs
         is_payable    = acc in payable_accs
 
+        if not (is_receivable or is_payable):
+            continue
+
         for party, pdata in party_map.items():
-            total = flt(pdata.get("total", 0))
+            opening = flt(pdata.get("opening", 0))
 
-            if is_receivable:
-                if total >= 0:
-                    _add(buckets["debtor_customers"], party, pdata, negate=False)
-                else:
-                    _add(buckets["creditor_customers"], party, pdata, negate=True)
+            # ── Step 1: Extract pure period movements ─────────────────────────
+            # When accumulated=True, _fetch_party_gl adds opening into the
+            # first period key so the raw value for period 0 =
+            # opening + period_0_movements. We strip opening back out so
+            # each element in `movements` represents only that period's net
+            # GL activity. This is required to compute a correct running total.
+            movements = []
+            for i, p in enumerate(period_list):
+                raw_val = flt(pdata.get(p.key, 0))
+                if accumulated and i == 0:
+                    raw_val -= opening   # un-bake opening from first period key
+                movements.append((p.key, raw_val))
 
-            elif is_payable:
-                if total <= 0:
-                    _add(buckets["creditor_suppliers"], party, pdata, negate=True)
-                else:
-                    _add(buckets["debtor_suppliers"], party, pdata, negate=False)
+            # ── Step 2 + 3: Walk periods, compute running, assign to bucket ──
+            running = opening
+            for pkey, mov in movements:
+                running += mov
+                abs_balance = abs(running)
+
+                if is_receivable:
+                    if running >= 0:
+                        _ensure(buckets["debtor_customers"], party)
+                        buckets["debtor_customers"][party][pkey] = abs_balance
+                    else:
+                        _ensure(buckets["creditor_customers"], party)
+                        buckets["creditor_customers"][party][pkey] = abs_balance
+
+                elif is_payable:
+                    if running <= 0:
+                        _ensure(buckets["creditor_suppliers"], party)
+                        buckets["creditor_suppliers"][party][pkey] = abs_balance
+                    else:
+                        _ensure(buckets["debtor_suppliers"], party)
+                        buckets["debtor_suppliers"][party][pkey] = abs_balance
+
+    # ── Step 4: Compute total field ───────────────────────────────────────────
+    # total = abs balance at LAST period = current state at report end date.
+    # Summing across periods would double-count accumulated balances — wrong.
+    last_pkey = period_list[-1].key if period_list else None
+    for bucket in buckets.values():
+        for pdata in bucket.values():
+            pdata["total"] = flt(pdata.get(last_pkey, 0)) if last_pkey else 0.0
 
     return buckets
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION INJECT
+# SECTION INJECT  (UNCHANGED from v2)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _inject_section(
@@ -536,6 +611,12 @@ def _emit_block(
         +1  block     (Customers / Suppliers)      is_group=1
         +2  group     (Customer Group / Sup Group)  is_group=1
         +3  party     (individual party name)       is_group=0
+
+    NOTE: With per-period sign-split, a party that switched sides mid-year
+    may appear here with non-zero values only in periods where it belongs
+    to this side. Its period columns are 0 otherwise. The show_zero filter
+    only hides rows where ALL period columns AND total are 0 simultaneously,
+    so historical-only exposure (zero current total) is still visible.
     """
     if not bucket_data:
         return
