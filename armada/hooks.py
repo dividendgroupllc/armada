@@ -19,6 +19,7 @@ fixtures = [
                     "segment",
                     "product_type",
                     "standard",
+                    "custom_barcode",
                     "custom_sub_account_name",
                     "custom_auto_created_from_sales_order",
                 )
@@ -42,6 +43,10 @@ fixtures = [
 # Apps
 # ------------------
 doc_events = {
+    "Item": {
+        "before_insert": "armada.armada_custom_app.barcode.ensure_item_barcode",
+        "validate": "armada.armada_custom_app.barcode.sync_item_barcode_display",
+    },
     "Sales Order": {
         "on_submit": "armada.armada_custom_app.events.sales_order.on_sales_order_submit",
         "before_cancel": "armada.armada_custom_app.events.sales_order.before_sales_order_cancel",
