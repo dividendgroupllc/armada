@@ -408,12 +408,21 @@ def get_period_key(posting_date, periods):
 # AGGREGATION
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# AGGREGATION
+# ---------------------------------------------------------------------------
+
 def aggregate_movements(movements, account_map, periods):
     """
     Returns:
-      result            : aggregated[activity][parent_name][period_key]  — category totals
-      account_result    : account_aggregated[parent_name][account][period_key] — per-account
-      unmapped          : list of unmapped movements
+      result         : aggregated[activity][parent_name][period_key]  — category totals
+      account_result : account_aggregated[parent_name][account][period_key] — per-account
+      unmapped       : list of unmapped movements
+
+    Sign logic:
+      PE  → direction from payment_type (Receive = +, Pay = −)
+            is_inflow faqat qaysi kategoriyaga tushishini belgilaydi, sign uchun emas
+      JE  → direction from is_inflow (counter debit = outflow → −, counter credit = inflow → +)
     """
     result         = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
     account_result = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
@@ -421,16 +430,19 @@ def aggregate_movements(movements, account_map, periods):
 
     for m in movements:
         if m["source"] == "PE":
-            mapping_account = m["account_from"] if m["payment_type"] == "Receive" else m["account_to"]
+            mapping_account = (
+                m["account_from"] if m["payment_type"] == "Receive"
+                else m["account_to"]
+            )
         else:
             mapping_account = m["account_from"]
 
         cat = account_map.get(mapping_account)
         if not cat:
             unmapped.append({
-                "voucher_no":      m["voucher_no"],
+                "voucher_no":      m.get("voucher_no"),
                 "mapping_account": mapping_account,
-                "amount":          m["amount"],
+                "amount":          m.get("amount"),
             })
             continue
 
@@ -439,13 +451,24 @@ def aggregate_movements(movements, account_map, periods):
             continue
 
         amount = flt(m["amount"])
-        signed = amount if cat["is_inflow"] else -amount
+
+        if m["source"] == "PE":
+            # PE uchun: payment_type aniq yo'nalishni beradi.
+            # Receive → pul KIRDI  → musbat
+            # Pay     → pul CHIQDI → manfiy
+            # Bu holat PE Pay → inflow-mapped account (masalan, 1310-Debtors)
+            # ni ham to'g'ri ishlaydi: signed = −amount (cash went out).
+            signed = amount if m["payment_type"] == "Receive" else -amount
+        else:
+            # JE uchun: is_inflow kategoriya konfiguratsiyasidan keladi.
+            # counter_debit (xarajat account debited, cash credited) → outflow → manfiy
+            # counter_credit (daromad/debitor credited, cash debited) → inflow → musbat
+            signed = amount if cat["is_inflow"] else -amount
 
         result[cat["activity_type"]][cat["parent_name"]][period_key] += signed
         account_result[cat["parent_name"]][mapping_account][period_key] += signed
 
     return result, account_result, unmapped
-
 
 # ---------------------------------------------------------------------------
 # REPORT ROW BUILDERS
