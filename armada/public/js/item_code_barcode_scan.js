@@ -276,7 +276,6 @@
             if (is_stock_entry_grid(this)) {
                 const item_code_df = get_item_code_docfield(this);
                 show_grid_list_column(item_code_df);
-                make_field_read_only(item_code_df);
                 set_grid_column_size(item_code_df, ITEM_CODE_COLUMNS);
                 hide_grid_list_column(find_field(this.docfields, "is_finished_item"));
                 hide_grid_list_column(find_field(this.user_defined_columns, "is_finished_item"));
@@ -293,11 +292,6 @@
                     return df.fieldname === "item_code";
                 }),
                 ITEM_CODE_COLUMNS
-            );
-            make_field_read_only(
-                this.user_defined_columns.find(function (df) {
-                    return df.fieldname === "item_code";
-                })
             );
 
             if (!this.user_defined_columns.some(function (df) {
@@ -327,7 +321,6 @@
         if (is_stock_entry_grid(grid)) {
             const item_code_df = get_item_code_docfield(grid);
             show_grid_list_column(item_code_df);
-            make_field_read_only(item_code_df);
             set_grid_column_size(item_code_df, ITEM_CODE_COLUMNS);
             set_grid_column_size(barcode_df, STOCK_ENTRY_BARCODE_COLUMNS);
             hide_grid_list_column(find_field(grid.docfields, "is_finished_item"));
@@ -351,19 +344,17 @@
 
         if (is_stock_entry_grid(grid)) {
             show_grid_list_column(grid.fields_map && grid.fields_map.item_code);
-            make_field_read_only(grid.fields_map && grid.fields_map.item_code);
             hide_grid_list_column(grid.fields_map && grid.fields_map.is_finished_item);
             apply_stock_entry_column_sizes(Object.values(grid.fields_map || {}));
         } else {
             set_grid_column_size(grid.fields_map && grid.fields_map.item_code, ITEM_CODE_COLUMNS);
-            make_field_read_only(grid.fields_map && grid.fields_map.item_code);
         }
 
         reset_grid_layout(
             grid,
             is_stock_entry_grid(grid)
-                ? "stock-entry-barcode-item-code-v2"
-                : "transaction-barcode-grid-v2"
+                ? "stock-entry-barcode-item-code-v3"
+                : "transaction-barcode-grid-v3"
         );
     }
 
