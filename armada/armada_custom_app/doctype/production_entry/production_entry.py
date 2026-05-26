@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 
 class ProductionEntry(Document):
@@ -272,6 +272,58 @@ def get_bom_for_item(item_code):
         )
 
     return bom
+
+
+@frappe.whitelist()
+def get_production_barcode_payload(production_entry):
+    """Return label data for QZ Tray barcode printing."""
+    doc = frappe.get_doc("Production Entry", production_entry)
+    doc.check_permission("read")
+
+    if doc.docstatus != 1:
+        frappe.throw(_("Barcode can only be printed after Production Entry is submitted"))
+
+    qty = flt(doc.qty_to_manufacture)
+    label_qty = cint(qty)
+    if qty != label_qty:
+        frappe.throw(_("Qty to Manufacture must be a whole number to print barcode labels"))
+
+    if label_qty <= 0:
+        frappe.throw(_("Qty to Manufacture must be greater than 0"))
+
+    barcode = frappe.db.get_value(
+        "Item Barcode",
+        {"parent": doc.item_to_manufacture, "barcode": ["!=", ""]},
+        "barcode",
+        order_by="idx asc",
+    )
+    if not barcode:
+        frappe.throw(_("Barcode not found for Item {0}").format(doc.item_to_manufacture))
+
+    item = frappe.db.get_value(
+        "Item",
+        doc.item_to_manufacture,
+        ["item_name", "fp_type", "segment", "product_type", "standard"],
+        as_dict=True,
+    ) or {}
+
+    def label_value(value):
+        return value or "None"
+
+    return {
+        "production_entry": doc.name,
+        "stock_entry": doc.stock_entry,
+        "item_code": doc.item_to_manufacture,
+        "item_name": doc.item_name or item.get("item_name"),
+        "barcode": barcode,
+        "posting_date": label_value(doc.posting_date),
+        "posting_time": label_value(doc.posting_time),
+        "fp_type": label_value(item.get("fp_type")),
+        "segment": label_value(item.get("segment")),
+        "product_type": label_value(item.get("product_type")),
+        "standard": label_value(item.get("standard")),
+        "qty": label_qty,
+    }
 
 
 @frappe.whitelist()

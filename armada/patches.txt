@@ -6,3 +6,5 @@
 # Patches added in this section will be executed after doctypes are migrated
 armada.patches.backfill_item_barcodes
 armada.patches.add_item_barcode_display_field
+armada.patches.show_barcode_in_transaction_item_grids
+armada.patches.unhide_barcode_in_transaction_item_grids

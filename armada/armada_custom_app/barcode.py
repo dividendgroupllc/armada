@@ -1,4 +1,5 @@
 import frappe
+from frappe.utils import nowdate, nowtime
 from frappe.model.naming import make_autoname
 
 
@@ -59,6 +60,62 @@ def get_first_item_barcode(doc):
 		)
 
 	return ""
+
+
+@frappe.whitelist()
+def get_item_primary_barcode(item_code):
+	if not item_code:
+		return ""
+
+	return (
+		frappe.db.get_value(
+			"Item Barcode",
+			{"parent": item_code, "barcode": ["!=", ""]},
+			"barcode",
+			order_by="idx asc",
+		)
+		or ""
+	)
+
+
+@frappe.whitelist()
+def get_stock_entry_barcode_item_details(
+	item_code,
+	barcode=None,
+	company=None,
+	purpose=None,
+	warehouse=None,
+	qty=1,
+	posting_date=None,
+	posting_time=None,
+):
+	if not item_code:
+		frappe.throw("Item Code is required.")
+
+	stock_entry = frappe.new_doc("Stock Entry")
+	stock_entry.company = company or frappe.defaults.get_user_default("Company")
+	stock_entry.purpose = purpose or "Material Receipt"
+	stock_entry.posting_date = posting_date or nowdate()
+	stock_entry.posting_time = posting_time or nowtime()
+
+	details = stock_entry.get_item_details(
+		{
+			"item_code": item_code,
+			"warehouse": warehouse or "",
+			"qty": qty or 1,
+			"transfer_qty": qty or 1,
+			"company": stock_entry.company,
+			"voucher_type": "Stock Entry",
+			"voucher_no": "",
+			"allow_zero_valuation": 1,
+		}
+	)
+	details.item_code = item_code
+	details.barcode = barcode or get_item_primary_barcode(item_code)
+	details.qty = details.qty or qty or 1
+	details.transfer_qty = details.transfer_qty or details.qty
+
+	return details
 
 
 def _has_barcode(doc):
