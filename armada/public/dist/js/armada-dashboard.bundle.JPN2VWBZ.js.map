@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../../../../apps/armada/armada/public/js/armada-dashboard.bundle.js"],
-  "sourcesContent": ["// Armada Dashboard Bundle\n// This file loads Chart.js globally for dashboard charts\n\n// Chart.js will be loaded via hooks.py CDN link\nconsole.log('Armada Dashboard JS loaded');\n"],
-  "mappings": ";;AAIA,UAAQ,IAAI,4BAA4B;",
-  "names": []
-}

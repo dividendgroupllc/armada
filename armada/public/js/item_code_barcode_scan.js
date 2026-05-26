@@ -389,12 +389,17 @@
         $(grid.wrapper)
             .off(HANDLER_NAMESPACE)
             .on("keydown" + HANDLER_NAMESPACE, selector, function (event) {
-                const barcode = String(this.value || "").trim();
-                if (event.key === "Enter" && is_armada_barcode(barcode)) {
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    this.value = "";
-                    resolve_barcode_input(frm, this, barcode);
+                const value = String(this.value || "").trim();
+                if (event.key !== "Enter" || !value) return;
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.value = "";
+
+                if (is_armada_barcode(value)) {
+                    resolve_barcode_input(frm, this, value);
+                } else {
+                    resolve_item_code_by_input(frm, this, value);
                 }
             })
             .on("input" + HANDLER_NAMESPACE, selector, frappe.utils.debounce(function () {
@@ -411,6 +416,36 @@
         if (!grid_row || !grid_row.doc) return;
 
         resolve_item_barcode(frm, grid_row.doc.doctype, grid_row.doc.name, barcode);
+    }
+
+    function resolve_item_code_by_input(frm, input, item_code) {
+        const grid_row = get_grid_row_from_input(frm, input);
+        if (!grid_row || !grid_row.doc) return;
+
+        resolve_item_by_item_code(frm, grid_row.doc.doctype, grid_row.doc.name, item_code);
+    }
+
+    function resolve_item_by_item_code(frm, cdt, cdn, item_code) {
+        const row = locals[cdt] && locals[cdt][cdn];
+        if (!row) return;
+        if (row.__armada_resolving_item_code === item_code) return;
+
+        row.__armada_resolving_item_code = item_code;
+
+        frappe.call({
+            method: "armada.armada_custom_app.barcode.get_item_details_by_item_code_search",
+            args: { item_code: item_code },
+            callback: function (r) {
+                if (!r.message || !r.message.item_code) {
+                    frappe.msgprint(__("No Item found for item code {0}", [item_code]));
+                    return;
+                }
+                apply_scanned_item(frm, cdt, cdn, r.message.barcode || "", r.message);
+            },
+            always: function () {
+                row.__armada_resolving_item_code = null;
+            }
+        });
     }
 
     function resolve_item_barcode(frm, cdt, cdn, barcode) {
@@ -714,17 +749,22 @@
                 item_code: function () {},
                 barcode: function (frm, cdt, cdn) {
                     const row = locals[cdt] && locals[cdt][cdn];
-                    if (!row || !is_armada_barcode(row.barcode) || row.item_code) {
-                        return;
-                    }
+                    if (!row || row.item_code) return;
 
-                    const barcode = row.barcode;
-                    if (cdt === "Stock Entry Detail") {
+                    if (is_armada_barcode(row.barcode)) {
+                        const barcode = row.barcode;
+                        if (cdt === "Stock Entry Detail") {
+                            row.barcode = "";
+                        }
+                        if (row.__armada_resolving_barcode !== barcode) {
+                            resolve_item_barcode(frm, cdt, cdn, barcode);
+                        }
+                    } else if (row.barcode && row.barcode.trim()) {
+                        const item_code_input = row.barcode.trim();
                         row.barcode = "";
-                    }
-
-                    if (row.__armada_resolving_barcode !== barcode) {
-                        resolve_item_barcode(frm, cdt, cdn, barcode);
+                        if (row.__armada_resolving_item_code !== item_code_input) {
+                            resolve_item_by_item_code(frm, cdt, cdn, item_code_input);
+                        }
                     }
                 }
             });

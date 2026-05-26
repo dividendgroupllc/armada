@@ -79,6 +79,25 @@ def get_item_primary_barcode(item_code):
 
 
 @frappe.whitelist()
+def get_item_details_by_item_code_search(item_code):
+	"""Look up item by item_code; return scan_barcode-compatible details."""
+	if not item_code:
+		return None
+
+	item = frappe.db.get_value(
+		"Item", item_code, ["item_code", "stock_uom", "disabled"], as_dict=True
+	)
+	if not item or item.disabled:
+		return None
+
+	return frappe._dict({
+		"item_code": item.item_code,
+		"uom": item.stock_uom,
+		"barcode": get_item_primary_barcode(item_code),
+	})
+
+
+@frappe.whitelist()
 def get_stock_entry_barcode_item_details(
 	item_code,
 	barcode=None,
