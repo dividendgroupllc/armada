@@ -5,7 +5,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "barcode",
   "item_code",
   "item_name",
   "column_break_1",
@@ -17,20 +16,12 @@
  ],
  "fields": [
   {
-   "columns": 2,
-   "fieldname": "barcode",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Barcode"
-  },
-  {
    "columns": 3,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Code",
    "options": "Item",
-   "read_only": 1,
    "reqd": 1
   },
   {

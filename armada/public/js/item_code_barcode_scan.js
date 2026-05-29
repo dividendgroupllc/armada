@@ -1,7 +1,7 @@
 (function () {
     const BARCODE_PATTERN = /^ARM\d{10}$/;
-    const PARENT_DOCTYPES = ["Sales Invoice", "Delivery Note", "Stock Entry", "Production Entry"];
-    const CHILD_DOCTYPES = ["Sales Invoice Item", "Delivery Note Item", "Stock Entry Detail", "Production Entry Item"];
+    const PARENT_DOCTYPES = ["Sales Invoice", "Delivery Note", "Stock Entry"];
+    const CHILD_DOCTYPES = ["Sales Invoice Item", "Delivery Note Item", "Stock Entry Detail"];
     const HANDLER_NAMESPACE = ".armada_item_code_barcode_scan";
     const STOCK_ENTRY_DETAILS_METHOD =
         "armada.armada_custom_app.barcode.get_stock_entry_barcode_item_details";
@@ -725,7 +725,7 @@
                     attach_item_code_input_handler(frm);
                 },
                 validate: function (frm) {
-                    if (frm.doctype === "Stock Entry" || frm.doctype === "Production Entry") {
+                    if (frm.doctype === "Stock Entry") {
                         remove_all_empty_barcode_rows(frm);
                     }
                 },
