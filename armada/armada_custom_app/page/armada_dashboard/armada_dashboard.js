@@ -26,17 +26,23 @@ class ArmadaDashboard {
 
 		// Independent filters per page so that changing dates on one page
 		// does NOT affect any other page.
+		const _today = frappe.datetime.get_today();
+		const _month_ago = frappe.datetime.add_months(_today, -1);
 		this.main_filters = {
-			from_date: frappe.datetime.month_start(),
-			to_date: frappe.datetime.get_today()
+			from_date: _month_ago,
+			to_date: _today
 		};
 		this.sales_filters = {
-			from_date: frappe.datetime.month_start(),
-			to_date: frappe.datetime.get_today()
+			from_date: _month_ago,
+			to_date: _today
 		};
 		this.cashflow_filters = {
-			from_date: frappe.datetime.month_start(),
-			to_date: frappe.datetime.get_today()
+			from_date: _month_ago,
+			to_date: _today
+		};
+		this.counterparties_filters = {
+			from_date: _month_ago,
+			to_date: _today
 		};
 
 		// Cached filter options (loaded once at startup)
@@ -57,6 +63,24 @@ class ArmadaDashboard {
 	render_layout() {
 		this.wrapper.html(frappe.render_template('armada_dashboard'));
 		this.init_theme();
+		this._inject_modal();
+	}
+
+	_inject_modal() {
+		const modal_html = `
+			<div class="armada-modal-overlay" id="party-modal-overlay">
+				<div class="armada-modal">
+					<div class="armada-modal-header">
+						<span class="armada-modal-title" id="party-modal-title"></span>
+						<button class="armada-modal-close" id="party-modal-close">&times;</button>
+					</div>
+					<div class="armada-modal-body" id="party-modal-body">
+						<div class="armada-modal-loading">Загрузка...</div>
+					</div>
+				</div>
+			</div>
+		`;
+		this.wrapper.find('.armada-dashboard-container').append(modal_html);
 	}
 
 	init_theme() {
@@ -127,12 +151,43 @@ class ArmadaDashboard {
 		});
 
 		// Apply date buttons
+		this.wrapper.on('click', '#btn-apply-main-date', function() {
+			me.apply_page_date_range('main');
+		});
+
 		this.wrapper.on('click', '#btn-apply-sales-date', function() {
 			me.apply_page_date_range('sales');
 		});
 
 		this.wrapper.on('click', '#btn-apply-cashflow-date', function() {
 			me.apply_page_date_range('cashflow');
+		});
+
+		this.wrapper.on('click', '#btn-apply-counterparties-date', function() {
+			me.apply_page_date_range('counterparties');
+		});
+
+		// Modal close
+		this.wrapper.on('click', '#party-modal-overlay', function(e) {
+			if (e.target === this) {
+				$('#party-modal-overlay').removeClass('show');
+			}
+		});
+		this.wrapper.on('click', '#party-modal-close', function() {
+			$('#party-modal-overlay').removeClass('show');
+		});
+
+		// Ranking row clicks → detail modal
+		this.wrapper.on('click', '#income-ranking-table tr[data-party]', function() {
+			me.show_party_detail($(this).data('party'));
+		});
+		this.wrapper.on('click', '#expense-ranking-table tr[data-party]', function() {
+			me.show_party_detail($(this).data('party'));
+		});
+
+		// P&L expense row click → account GL detail modal
+		this.wrapper.on('click', '#pl-expenses-table tr[data-account]', function() {
+			me.show_account_detail($(this).data('account'), $(this).data('label'));
 		});
 
 		// Close dropdowns on outside click
@@ -149,6 +204,7 @@ class ArmadaDashboard {
 	_get_page_filters(page) {
 		if (page === 'sales') return this.sales_filters;
 		if (page === 'cashflow') return this.cashflow_filters;
+		if (page === 'counterparties') return this.counterparties_filters;
 		return this.main_filters;
 	}
 
@@ -217,7 +273,7 @@ class ArmadaDashboard {
 	}
 
 	init_page_date_range(page) {
-		const prefix = page === 'sales' ? 'sales' : 'cashflow';
+		const prefix = page;
 		const filters = this._get_page_filters(page);
 		this.wrapper.find(`#${prefix}-date-start`).val(filters.from_date);
 		this.wrapper.find(`#${prefix}-date-end`).val(filters.to_date);
@@ -225,7 +281,7 @@ class ArmadaDashboard {
 	}
 
 	update_page_date_display(page) {
-		const prefix = page === 'sales' ? 'sales' : 'cashflow';
+		const prefix = page;
 		const filters = this._get_page_filters(page);
 		const startFormatted = this.format_date_display_text(filters.from_date);
 		const endFormatted = this.format_date_display_text(filters.to_date);
@@ -243,7 +299,7 @@ class ArmadaDashboard {
 	}
 
 	apply_page_date_range(page) {
-		const prefix = page === 'sales' ? 'sales' : 'cashflow';
+		const prefix = page;
 		const startInput = this.wrapper.find(`#${prefix}-date-start`).val();
 		const endInput = this.wrapper.find(`#${prefix}-date-end`).val();
 		
@@ -286,10 +342,28 @@ class ArmadaDashboard {
 
 	// ==================== MAIN PAGE ====================
 	render_main_page() {
-		$('#page-title').text('ГЛАВНЫЕ ПОКАЗАТЕЛИ ЗА ТЕКУЩИЙ МЕСЯЦ');
-		
+		$('#page-title').text('ГЛАВНЫЕ ПОКАЗАТЕЛИ');
+
 		let content = `
 			<div class="main-page">
+				<!-- Date Filter Bar -->
+				<div class="dark-filter-bar" style="justify-content: flex-end;">
+					<div class="filter-item date-range-item">
+						<div class="dark-date-range" id="main-date-range">
+							<span class="date-range-text"></span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="date-range-dropdown" id="main-date-dropdown">
+							<div class="date-inputs">
+								<input type="date" id="main-date-start" class="date-input-dark">
+								<span class="date-separator">-</span>
+								<input type="date" id="main-date-end" class="date-input-dark">
+							</div>
+							<button class="btn-apply-date" id="btn-apply-main-date">Применить</button>
+						</div>
+					</div>
+				</div>
+
 				<!-- KPI Cards -->
 				<div class="kpi-cards-row">
 					<div class="kpi-card">
@@ -349,6 +423,7 @@ class ArmadaDashboard {
 		`;
 		
 		$('#page-content').html(content);
+		this.init_page_date_range('main');
 		this.load_main_data();
 	}
 
@@ -1148,6 +1223,16 @@ class ArmadaDashboard {
 						</div>
 					</div>
 				</div>
+
+				<!-- P&L Expenses Card -->
+				<div class="charts-row">
+					<div class="chart-container full scrollable-card">
+						<div class="chart-title">РАСХОДЫ ПО СЧЕТАМ (52001 / 52002 / 52003)</div>
+						<div class="data-table-wrapper" id="pl-expenses-table">
+							<!-- Table will be rendered here -->
+						</div>
+					</div>
+				</div>
 			</div>
 		`;
 		
@@ -1244,6 +1329,21 @@ class ArmadaDashboard {
 				}
 			}
 		});
+
+		// Load P&L expenses (52001 / 52002 / 52003)
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_pl_expenses',
+			args: {
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me.render_pl_expenses(r.message);
+				}
+			}
+		});
 	}
 
 	update_cashflow_kpis(data) {
@@ -1323,7 +1423,7 @@ class ArmadaDashboard {
 		data.forEach((row, index) => {
 			const barWidth = (row.amount / data[0].amount) * 100;
 			html += `
-				<tr>
+				<tr class="clickable-row" data-party="${row.party}">
 					<td>${index + 1}.</td>
 					<td>${row.party}</td>
 					<td>
@@ -1371,7 +1471,7 @@ class ArmadaDashboard {
 		data.forEach((row, index) => {
 			const barWidth = (row.amount / data[0].amount) * 100;
 			html += `
-				<tr>
+				<tr class="clickable-row" data-party="${row.category}">
 					<td>${index + 1}.</td>
 					<td>${row.category}</td>
 					<td>
@@ -1399,6 +1499,99 @@ class ArmadaDashboard {
 		`;
 		
 		$('#expense-ranking-table').html(html);
+	}
+
+	show_party_detail(party) {
+		let me = this;
+		const filters = this.cashflow_filters;
+		$('#party-modal-title').text(party);
+		$('#party-modal-body').html('<div class="armada-modal-loading">Загрузка...</div>');
+		$('#party-modal-overlay').addClass('show');
+
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_party_cashflow_detail',
+			args: {
+				party: party,
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me.render_party_detail_table(r.message);
+				} else {
+					$('#party-modal-body').html('<div class="armada-modal-loading">Нет данных</div>');
+				}
+			}
+		});
+	}
+
+	render_party_detail_table(data) {
+		if (!data.length) {
+			$('#party-modal-body').html('<div class="armada-modal-loading">Нет данных за выбранный период</div>');
+			return;
+		}
+
+		let totalIncome = 0, totalExpense = 0;
+		let html = `
+			<table class="data-table">
+				<thead>
+					<tr>
+						<th>Дата</th>
+						<th>Тип</th>
+						<th>Способ оплаты</th>
+						<th>Сумма</th>
+						<th>Комментарий</th>
+					</tr>
+				</thead>
+				<tbody>
+		`;
+
+		data.forEach(row => {
+			const isIncome = row.flow_type === 'Приход';
+			const isExpense = row.flow_type === 'Расход';
+			if (isIncome) totalIncome += row.amount;
+			if (isExpense) totalExpense += row.amount;
+			const typeClass = isIncome ? 'positive' : (isExpense ? 'negative' : '');
+			html += `
+				<tr>
+					<td>${row.date}</td>
+					<td class="${typeClass}"><strong>${row.flow_type}</strong></td>
+					<td>${row.payment_method}</td>
+					<td>${this.format_currency(row.amount)}</td>
+					<td>${row.comment}</td>
+				</tr>
+			`;
+		});
+
+		html += `
+				</tbody>
+				<tfoot>
+		`;
+		if (totalIncome) {
+			html += `
+					<tr>
+						<td colspan="3"><strong>Итого приход</strong></td>
+						<td class="positive"><strong>${this.format_currency(totalIncome)}</strong></td>
+						<td></td>
+					</tr>
+			`;
+		}
+		if (totalExpense) {
+			html += `
+					<tr>
+						<td colspan="3"><strong>Итого расход</strong></td>
+						<td class="negative"><strong>${this.format_currency(totalExpense)}</strong></td>
+						<td></td>
+					</tr>
+			`;
+		}
+		html += `
+				</tfoot>
+			</table>
+		`;
+
+		$('#party-modal-body').html(html);
 	}
 
 	render_turnover_summary(data) {
@@ -1432,22 +1625,161 @@ class ArmadaDashboard {
 		$('#turnover-data-table').html(html);
 	}
 
+	render_pl_expenses(data) {
+		if (!data || !data.groups || !data.groups.length) {
+			$('#pl-expenses-table').html('<div style="padding:20px;color:var(--color-muted)">Нет данных за выбранный период</div>');
+			return;
+		}
+
+		let html = `
+			<table class="data-table">
+				<thead>
+					<tr>
+						<th>Счёт</th>
+						<th style="text-align:right">Сумма</th>
+					</tr>
+				</thead>
+				<tbody>
+		`;
+
+		data.groups.forEach(group => {
+			group.children.forEach(child => {
+				const label = child.account_number
+					? `${child.account_number} — ${child.account_name}`
+					: child.account_name;
+				html += `
+					<tr class="clickable-row" data-account="${child.account_key}" data-label="${label}">
+						<td>${label}</td>
+						<td style="text-align:right">${this.format_currency(child.amount)}</td>
+					</tr>
+				`;
+			});
+		});
+
+		html += `
+				<tr class="pl-grand-total-row">
+					<td><strong>ИТОГО РАСХОДЫ</strong></td>
+					<td style="text-align:right"><strong>${this.format_currency(data.grand_total)}</strong></td>
+				</tr>
+				</tbody>
+			</table>
+		`;
+
+		$('#pl-expenses-table').html(html);
+	}
+
+	show_account_detail(account_key, label) {
+		let me = this;
+		const filters = this.cashflow_filters;
+		$('#party-modal-title').text(label || account_key);
+		$('#party-modal-body').html('<div class="armada-modal-loading">Загрузка...</div>');
+		$('#party-modal-overlay').addClass('show');
+
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_account_gl_detail',
+			args: {
+				account_key: account_key,
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me.render_account_gl_table(r.message);
+				} else {
+					$('#party-modal-body').html('<div class="armada-modal-loading">Нет данных</div>');
+				}
+			}
+		});
+	}
+
+	render_account_gl_table(data) {
+		if (!data.length) {
+			$('#party-modal-body').html('<div class="armada-modal-loading">Нет данных за выбранный период</div>');
+			return;
+		}
+
+		let totalDebit = 0, totalCredit = 0;
+		let html = `
+			<table class="data-table">
+				<thead>
+					<tr>
+						<th>Дата</th>
+						<th>Тип документа</th>
+						<th>Документ</th>
+						<th style="text-align:right">Дебет</th>
+						<th style="text-align:right">Кредит</th>
+						<th>Комментарий</th>
+					</tr>
+				</thead>
+				<tbody>
+		`;
+
+		data.forEach(row => {
+			totalDebit += row.debit;
+			totalCredit += row.credit;
+			html += `
+				<tr>
+					<td>${row.date}</td>
+					<td>${row.voucher_type}</td>
+					<td>${row.voucher_no}</td>
+					<td style="text-align:right">${row.debit ? this.format_currency(row.debit) : ''}</td>
+					<td style="text-align:right">${row.credit ? this.format_currency(row.credit) : ''}</td>
+					<td>${row.comment}</td>
+				</tr>
+			`;
+		});
+
+		html += `
+				</tbody>
+				<tfoot>
+					<tr>
+						<td colspan="3"><strong>Итого</strong></td>
+						<td style="text-align:right"><strong>${this.format_currency(totalDebit)}</strong></td>
+						<td style="text-align:right"><strong>${this.format_currency(totalCredit)}</strong></td>
+						<td></td>
+					</tr>
+				</tfoot>
+			</table>
+		`;
+
+		$('#party-modal-body').html(html);
+	}
+
 	// ==================== COUNTERPARTIES PAGE ====================
 	render_counterparties_page() {
 		$('#page-title').text('ТЕКУЩАЯ ЗАДОЛЖЕННОСТЬ КОНТРАГЕНТОВ');
 		
 		let content = `
 			<div class="counterparties-page">
+				<!-- Date Filter Bar -->
+				<div class="dark-filter-bar" style="justify-content: flex-end;">
+					<div class="filter-item date-range-item">
+						<div class="dark-date-range" id="counterparties-date-range">
+							<span class="date-range-text"></span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="date-range-dropdown" id="counterparties-date-dropdown">
+							<div class="date-inputs">
+								<input type="date" id="counterparties-date-start" class="date-input-dark">
+								<span class="date-separator">-</span>
+								<input type="date" id="counterparties-date-end" class="date-input-dark">
+							</div>
+							<button class="btn-apply-date" id="btn-apply-counterparties-date">Применить</button>
+						</div>
+					</div>
+				</div>
+
 				<!-- KPI Cards -->
 				<div class="kpi-cards-row counterparties-main-kpis">
 					<div class="kpi-column debt-column">
 						<div class="kpi-card debt-card">
 							<div class="kpi-label">Задолженность клиентов</div>
-							<div class="kpi-value negative" id="total-customer-debt">$0</div>
+							<div class="kpi-value positive" id="total-customer-debt">$0</div>
 						</div>
 						<div class="kpi-card debt-card">
 							<div class="kpi-label">Задолженность поставщикам</div>
-							<div class="kpi-value positive" id="total-supplier-debt">$0</div>
+							<div class="kpi-value negative" id="total-supplier-debt">$0</div>
 						</div>
 					</div>
 
@@ -1493,6 +1825,7 @@ class ArmadaDashboard {
 		`;
 		
 		$('#page-content').html(content);
+		this.init_page_date_range('counterparties');
 		this.load_counterparties_data();
 	}
 
@@ -1500,10 +1833,15 @@ class ArmadaDashboard {
 		let me = this;
 		me._counterparties_kpi_data = null;
 		me._main_kpis_for_counterparties = null;
+		const filters = this.counterparties_filters;
 
 		// Load counterparties KPIs
 		frappe.call({
 			method: 'armada.armada_custom_app.api.dashboard.get_counterparties_kpis',
+			args: {
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
 			callback: function(r) {
 				if (r.message) {
 					me._counterparties_kpi_data = r.message;
@@ -1515,6 +1853,10 @@ class ArmadaDashboard {
 		// Pull main page receipts and merge into counterparties creditor view
 		frappe.call({
 			method: 'armada.armada_custom_app.api.dashboard.get_main_kpis',
+			args: {
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
 			callback: function(r) {
 				if (r.message) {
 					me._main_kpis_for_counterparties = r.message;
@@ -1528,6 +1870,10 @@ class ArmadaDashboard {
 		// Load customer debts
 		frappe.call({
 			method: 'armada.armada_custom_app.api.dashboard.get_customer_debts',
+			args: {
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
 			callback: function(r) {
 				if (r.message) {
 					me.render_customer_debts(r.message);
@@ -1538,6 +1884,10 @@ class ArmadaDashboard {
 		// Load supplier debts
 		frappe.call({
 			method: 'armada.armada_custom_app.api.dashboard.get_supplier_debts',
+			args: {
+				from_date: filters.from_date,
+				to_date: filters.to_date
+			},
 			callback: function(r) {
 				if (r.message) {
 					me.render_supplier_debts(r.message);

@@ -572,3 +572,125 @@ def _expense_ranking_fallback(from_date, to_date):
 		"amount": flt(amt, 2),
 		"change": flt(calculate_change(amt, prev_expenses.get(cat, 0)), 1),
 	} for cat, amt in sorted_exp]
+
+
+# ── Расходы по счетам 52001 / 52002 / 52003 (P&L) ──────────────────────────
+
+@frappe.whitelist()
+def get_pl_expenses(from_date=None, to_date=None):
+	"""
+	Grouped P&L expenses for accounts 52001, 52002, 52003 and their children.
+	Returns GL Entry debit-credit per leaf account, grouped by parent.
+	"""
+	from_date, to_date = get_smart_date_range(from_date, to_date)
+
+	parents = frappe.db.sql("""
+		SELECT name, account_name, account_number, lft, rgt
+		FROM `tabAccount`
+		WHERE account_number IN ('52001', '52002', '52003')
+		ORDER BY account_number
+	""", as_dict=True)
+
+	result = []
+	grand_total = 0.0
+
+	for parent in parents:
+		rows = frappe.db.sql("""
+			SELECT
+				acc.name,
+				acc.account_name,
+				acc.account_number,
+				IFNULL(SUM(gle.debit - gle.credit), 0) AS amount
+			FROM `tabAccount` acc
+			LEFT JOIN `tabGL Entry` gle
+				ON gle.account = acc.name
+				AND gle.is_cancelled = 0
+				AND gle.posting_date BETWEEN %s AND %s
+			WHERE acc.lft > %s AND acc.rgt < %s
+			  AND acc.is_group = 0
+			GROUP BY acc.name, acc.account_name, acc.account_number
+			HAVING amount != 0
+			ORDER BY acc.lft
+		""", (from_date, to_date, parent.lft, parent.rgt), as_dict=True)
+
+		subtotal = sum(flt(r.amount) for r in rows)
+		grand_total += subtotal
+
+		result.append({
+			"account_number": parent.account_number,
+			"account_name": parent.account_name,
+			"subtotal": flt(subtotal, 2),
+			"children": [{
+				"account_number": r.account_number or "",
+				"account_name": r.account_name,
+				"account_key": r.name,
+				"amount": flt(r.amount, 2),
+			} for r in rows],
+		})
+
+	return {"groups": result, "grand_total": flt(grand_total, 2)}
+
+
+# ── Детализация по счёту расходов (modal) ───────────────────────────────────
+
+@frappe.whitelist()
+def get_account_gl_detail(account_key, from_date=None, to_date=None):
+	"""GL Entry rows for a single account — used in P&L expenses modal."""
+	from_date, to_date = get_smart_date_range(from_date, to_date)
+
+	data = frappe.db.sql("""
+		SELECT
+			gle.posting_date  AS date,
+			gle.voucher_type,
+			gle.voucher_no,
+			gle.debit,
+			gle.credit,
+			gle.remarks
+		FROM `tabGL Entry` gle
+		WHERE gle.is_cancelled = 0
+			AND gle.account = %s
+			AND gle.posting_date BETWEEN %s AND %s
+		ORDER BY gle.posting_date DESC, gle.name DESC
+	""", (account_key, from_date, to_date), as_dict=True)
+
+	return [{
+		"date": r.date.strftime("%d.%m.%Y") if r.date else "",
+		"voucher_type": r.voucher_type or "",
+		"voucher_no": r.voucher_no or "",
+		"debit": flt(r.debit, 2),
+		"credit": flt(r.credit, 2),
+		"amount": flt(r.debit - r.credit, 2),
+		"comment": r.remarks or "",
+	} for r in data]
+
+
+# ── Детализация по контрагенту (modal) ──────────────────────────────────────
+
+@frappe.whitelist()
+def get_party_cashflow_detail(party, from_date=None, to_date=None):
+	"""All Payment Entry transactions for a single party — used in modal detail view."""
+	from_date, to_date = get_smart_date_range(from_date, to_date)
+
+	data = frappe.db.sql("""
+		SELECT
+			pe.posting_date  AS date,
+			pe.payment_type,
+			pe.mode_of_payment,
+			pe.paid_amount   AS amount,
+			pe.remarks       AS comment
+		FROM `tabPayment Entry` pe
+		WHERE pe.docstatus = 1
+			AND pe.party = %s
+			AND pe.posting_date BETWEEN %s AND %s
+		ORDER BY pe.posting_date DESC, pe.name DESC
+	""", (party, from_date, to_date), as_dict=True)
+
+	flow_map = {"Receive": "Приход", "Pay": "Расход", "Internal Transfer": "Перевод"}
+
+	return [{
+		"date": r.date.strftime("%d.%m.%Y") if r.date else "",
+		"flow_type": flow_map.get(r.payment_type, r.payment_type or ""),
+		"payment_method": r.mode_of_payment or "",
+		"amount": flt(r.amount, 2),
+		"comment": r.comment or "",
+	} for r in data]

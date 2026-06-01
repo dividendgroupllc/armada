@@ -45,6 +45,9 @@ from armada.armada_custom_app.api.cashflow import (      # noqa: F401
 	get_expense_ranking,
 	get_cashflow_data,
 	get_turnover_summary,
+	get_party_cashflow_detail,
+	get_pl_expenses,
+	get_account_gl_detail,
 )
 
 # ── КОНТРАГЕНТЫ ─────────────────────────────────────────────────────────────────────

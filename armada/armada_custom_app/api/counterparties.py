@@ -162,10 +162,16 @@ def refresh_counterparty_cache():
 # ── KPI Cards ───────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_counterparties_kpis():
-	"""Counterparties page KPI strip — from cache."""
-	supplier_data = _get_supplier_debts_cached()
-	customer_data = _get_customer_debts_cached()
+def get_counterparties_kpis(from_date=None, to_date=None):
+	"""Counterparties page KPI strip — bypasses cache when dates provided."""
+	if from_date or to_date:
+		supplier_rows = _calc_supplier_debts(from_date, to_date)
+		supplier_data = [{"supplier": r.supplier, "amount": flt(r.debt_amount, 2)} for r in supplier_rows]
+		customer_rows = _calc_customer_debts(from_date, to_date)
+		customer_data = [{"customer": r.customer, "amount": flt(r.debt_amount, 2)} for r in customer_rows]
+	else:
+		supplier_data = _get_supplier_debts_cached()
+		customer_data = _get_customer_debts_cached()
 
 	supplier_debt = sum(flt(r["amount"]) for r in supplier_data)
 	customer_debt = sum(flt(r["amount"]) for r in customer_data)
@@ -181,14 +187,20 @@ def get_counterparties_kpis():
 # ── Задолженность клиентов (table) ──────────────────────────────────────────
 
 @frappe.whitelist()
-def get_customer_debts():
-	"""Customer debts — from cache."""
+def get_customer_debts(from_date=None, to_date=None):
+	"""Customer debts — bypasses cache when dates provided."""
+	if from_date or to_date:
+		rows = _calc_customer_debts(from_date, to_date)
+		return [{"customer": r.customer, "amount": flt(r.debt_amount, 2)} for r in rows]
 	return _get_customer_debts_cached()
 
 
 # ── Задолженность поставщикам (table) ────────────────────────────────────────
 
 @frappe.whitelist()
-def get_supplier_debts():
-	"""Supplier debts — from cache."""
+def get_supplier_debts(from_date=None, to_date=None):
+	"""Supplier debts — bypasses cache when dates provided."""
+	if from_date or to_date:
+		rows = _calc_supplier_debts(from_date, to_date)
+		return [{"supplier": r.supplier, "amount": flt(r.debt_amount, 2)} for r in rows]
 	return _get_supplier_debts_cached()
