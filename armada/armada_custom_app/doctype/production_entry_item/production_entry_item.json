@@ -16,7 +16,7 @@
  ],
  "fields": [
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -25,6 +25,7 @@
    "reqd": 1
   },
   {
+   "columns": 2,
    "fetch_from": "item_code.item_name",
    "fieldname": "item_name",
    "fieldtype": "Data",
@@ -37,6 +38,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 2,
    "fieldname": "source_warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -49,6 +51,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 2,
    "fieldname": "required_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -56,6 +59,7 @@
    "reqd": 1
   },
   {
+   "columns": 2,
    "fieldname": "available_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
