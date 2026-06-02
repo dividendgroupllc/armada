@@ -7,10 +7,10 @@
  "docstatus": 0,
  "doctype": "Report",
  "filters": [],
- "idx": 0,
+ "idx": 1,
  "is_standard": "Yes",
  "letterhead": null,
- "modified": "2026-03-28 16:07:46.606897",
+ "modified": "2026-06-02 16:44:49.907681",
  "modified_by": "Administrator",
  "module": "Armada Custom app",
  "name": "Direct Cash Flow",
@@ -28,6 +28,9 @@
   },
   {
    "role": "kassa admin"
+  },
+  {
+   "role": "taminotchi"
   }
  ],
  "timeout": 0
