@@ -142,10 +142,12 @@
     }
 
     function set_grid_column_size(df, columns) {
-        if (!df) return;
-
-        df.columns = columns;
-        df.colsize = columns;
+        // Ataylab no-op: ustun kengligini script majburlamaydi.
+        // Kenglikni foydalanuvchi Customize Form / "Configure Columns" orqali
+        // boshqaradi (masalan Stock Entry basic_rate kengligi, qo'shilgan amount
+        // ustuni va h.k. saqlanib qoladi). Script faqat ko'rinish/tartib bilan
+        // shug'ullanadi, kenglik bilan emas.
+        return;
     }
 
     function is_stock_entry_grid(grid) {
@@ -262,15 +264,10 @@
             const barcode_df = get_barcode_docfield(this);
             if (!barcode_df) return;
 
-            const barcode_columns = is_stock_entry_grid(this)
-                ? STOCK_ENTRY_BARCODE_COLUMNS
-                : BARCODE_COLUMNS;
-
+            // Faqat ko'rinishni ta'minlaymiz; kenglikni majburlamaymiz.
             Object.assign(barcode_df, {
                 hidden: 0,
-                in_list_view: 1,
-                columns: barcode_columns,
-                colsize: barcode_columns
+                in_list_view: 1
             });
 
             if (is_stock_entry_grid(this)) {
@@ -336,9 +333,7 @@
         if (grid.fields_map && grid.fields_map.barcode) {
             Object.assign(grid.fields_map.barcode, {
                 hidden: 0,
-                in_list_view: 1,
-                columns: is_stock_entry_grid(grid) ? STOCK_ENTRY_BARCODE_COLUMNS : BARCODE_COLUMNS,
-                colsize: is_stock_entry_grid(grid) ? STOCK_ENTRY_BARCODE_COLUMNS : BARCODE_COLUMNS
+                in_list_view: 1
             });
         }
 
