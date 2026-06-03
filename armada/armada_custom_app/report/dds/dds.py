@@ -56,10 +56,14 @@ def get_data(filters):
 
     pe_vouchers = [r.voucher_no for r in transactions if r.voucher_type == "Payment Entry"]
     je_vouchers = [r.voucher_no for r in transactions if r.voucher_type == "Journal Entry"]
+    all_vouchers = pe_vouchers + je_vouchers
 
     pe_info = get_payment_entry_info_batch(pe_vouchers)
     je_info = get_journal_entry_info_batch(je_vouchers)
     je_remarks = get_journal_entry_remarks_batch(je_vouchers)
+
+    # --- YANGI: Kassa remarkslarini batch olish ---
+    kassa_remarks = get_kassa_remarks_batch(all_vouchers)
 
     data = []
 
@@ -112,7 +116,8 @@ def get_data(filters):
             "description": strip_category_prefix(info["description"]),
             "category": info["category"],
             "summa": kirim if kirim else chiqim,
-            "remarks": get_remarks(row, pe_info, je_remarks),
+            # --- YANGI: kassa_remarks birinchi, fallback PE/JE ---
+            "remarks": get_remarks(row, pe_info, je_remarks, kassa_remarks),
             "voucher_type": row.voucher_type,
             "voucher_no": row.voucher_no,
             "kirim": kirim,
@@ -224,11 +229,47 @@ def get_journal_entry_remarks_batch(voucher_nos):
     return {e.name: (e.user_remark or "") for e in entries}
 
 
-def get_remarks(row, pe_info, je_remarks):
-    if row.voucher_type == "Payment Entry" and row.voucher_no in pe_info:
-        return pe_info[row.voucher_no].get("remarks") or ""
-    if row.voucher_type == "Journal Entry" and row.voucher_no in je_remarks:
-        return je_remarks[row.voucher_no] or ""
+def get_kassa_remarks_batch(voucher_nos):
+    """
+    Kassa doctype dan linked_entry bo'yicha remarks olish.
+    linked_entry — Payment Entry yoki Journal Entry nomi.
+    Qaytaradi: {voucher_no: remarks_string}
+    """
+    if not voucher_nos:
+        return {}
+
+    entries = frappe.db.sql("""
+        SELECT linked_entry, remarks
+        FROM `tabKassa`
+        WHERE linked_entry IN %s
+          AND docstatus = 1
+    """, (voucher_nos,), as_dict=True)
+
+    return {e.linked_entry: (e.remarks or "") for e in entries}
+
+
+def get_remarks(row, pe_info, je_remarks, kassa_remarks=None):
+    """
+    Izoh olish tartibi:
+    1. Kassa.remarks (linked_entry = voucher_no bo'lgan yozuv)
+    2. Fallback: Payment Entry.remarks yoki Journal Entry.user_remark
+    """
+    voucher = row.voucher_no
+
+    # 1. Kassa dan olish (ustuvor)
+    if kassa_remarks and voucher in kassa_remarks:
+        kassa_remark = kassa_remarks[voucher]
+        if kassa_remark:
+            return kassa_remark
+
+    # 2. Fallback: Payment Entry
+    if row.voucher_type == "Payment Entry" and voucher in pe_info:
+        return pe_info[voucher].get("remarks") or ""
+
+    # 3. Fallback: Journal Entry
+    if row.voucher_type == "Journal Entry" and voucher in je_remarks:
+        return je_remarks[voucher] or ""
+
     return ""
 
 
