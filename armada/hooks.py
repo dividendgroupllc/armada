@@ -169,6 +169,12 @@ doctype_js = {
 # before_install = "armada.install.before_install"
 # after_install = "armada.install.after_install"
 
+# Migration
+# ---------
+# "Gross Profit" reportida dublikat total qatori chiqmasligi uchun
+# add_total_row=0 ni har migratsiyada enforce qilamiz.
+after_migrate = ["armada.overrides.gross_profit.ensure_no_duplicate_total"]
+
 # Uninstallation
 # ------------
 

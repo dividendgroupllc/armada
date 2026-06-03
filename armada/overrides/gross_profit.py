@@ -64,6 +64,20 @@ def apply() -> None:
     gp_module._armada_customer_patch = True
 
 
+def ensure_no_duplicate_total() -> None:
+    """"Gross Profit" reportida `add_total_row` ni 0 da ushlab turadi.
+
+    erpnext skripti o'z "Total" qatorini qo'shadi; agar report hujjatida
+    `add_total_row = 1` bo'lsa, Frappe freymvorki ustiga ikkinchi (dublikat,
+    ikki barobar hisoblaydigan) total qatorini qo'shadi. ERPNext bu reportni
+    0 bilan tarqatadi. after_migrate hook orqali har bir saytda enforce qilamiz.
+    """
+    if not frappe.db.exists("Report", "Gross Profit"):
+        return
+    if frappe.db.get_value("Report", "Gross Profit", "add_total_row"):
+        frappe.db.set_value("Report", "Gross Profit", "add_total_row", 0)
+
+
 def execute(filters: dict[str, Any] | None = None):
     """erpnext Gross Profit execute ustiga o'ralgan versiya."""
     columns, data = _original_execute(filters)
