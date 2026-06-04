@@ -1,6 +1,16 @@
 """
-armada_custom_app/pdf_engine/pl_pdf.py
-P&L PDF generator — dynamic header + data rows
+armada_custom_app/pdf_engine/pl_pdf.py  —  v7 FINAL
+
+v6 dan farq: 4 yangi metrik qator PASTDAN → TEPAGA ko'chirildi.
+  - Месяц (oy nomlari, top=59) qatoridan KEYIN, Выручка'dan OLDIN joylashadi
+  - Buning uchun Выручка (top=67.5) va undan pastdagi BARCHA narsa
+    4 qator (46.4pt) PASTGA suriladi
+  - 4 yangi qator tepada chiziladi (fon + label + har oy raqamlari)
+
+Boshqa o'zgarishlar saqlanadi:
+  1. total_manuf → Bold
+  2. Кредит/Алименты o'chirilgan + gap yopilgan
+  3. Яндекс инстаграм (659) + Стоянка (670)
 """
 import os
 import pdfplumber
@@ -15,8 +25,24 @@ from armada.armada_custom_app.pdf_engine.base_generator import (
 
 TEMPLATE_COL_X = [290.0, 364.6, 439.2, 513.7, 588.3, 662.9, 737.5, 812.0]
 LABEL_CUTOFF   = 217.0
+HEADER_TOPS    = {36, 37, 47, 59}
 
-HEADER_TOPS = {36, 37, 47, 59}
+SKIP_TOPS = {282}   # DejaVu Bold overlay label (template) — overlap
+
+# ── TEPADA 4 yangi qator uchun joy ochish ──
+# Bu top dan PASTdagi hamma narsa pastga suriladi:
+TOP_INSERT_AFTER_TOP = 67.0
+# Surilish (4 qator × 11.6pt):
+TOP_INSERT_PT        = 46.4
+# 4 yangi qator tops (Месяц=59 dan keyin):
+NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8]
+NEW_ROW_H            = 11.6
+
+# ── Кредит/Алименты GAP yopish (v6 dan) ──
+GAP_REMOVE_RECT_TOPS = [421.4, 432.5]
+GAP_RECT_TOL         = 1.0
+GAP_SHIFT_AFTER_TOP  = 440.0
+GAP_SHIFT_PT         = 23.2
 
 MONTH_RU = {
     "jan":"Январь",  "feb":"Февраль", "mar":"Март",
@@ -25,17 +51,24 @@ MONTH_RU = {
     "oct":"Октябрь", "nov":"Ноябрь",  "dec":"Декабрь",
 }
 
-# Bu row larda manfiy qiymat qizil fonda ko'rinmaydi —
-# shuning uchun qora rangda chizamiz
 RED_BG_ROWS = {"marginal", "gross_profit", "op_profit", "net_profit"}
+BOLD_ROWS   = {"total_manuf"}
+
+# 4 yangi metrik qator (tepada)
+EXTRA_ROWS = [
+    ("units_sold",         "Количество продаж",                  "plain"),
+    ("units_produced",     "Количество произведённых изделий",    "plain"),
+    ("production_cost",    "Сумма производства",                  "num"),
+    ("production_workers", "Количество производственных рабочих", "plain"),
+]
 
 
 def _parse_col(ck):
-    """'oct_2025' -> ('Октябрь', '2025')"""
     parts = ck.split("_")
     mon   = MONTH_RU.get(parts[0].lower(), parts[0].capitalize())
     year  = parts[1] if len(parts) > 1 else ""
     return mon, year
+
 
 ROW_MAP = {
     70:  ("revenue_mult",  "plain"),
@@ -60,8 +93,6 @@ ROW_MAP = {
     391: ("podoh_nalog",   "num"),
     402: ("inps",          "num"),
     413: ("sp",            "num"),
-    425: ("kredit",        "num"),
-    436: ("alimenty",      "num"),
     447: ("mobil_bank",    "num"),
     458: ("nds",           "num"),
     469: ("utilizaciya",   "num"),
@@ -81,7 +112,8 @@ ROW_MAP = {
     624: ("svyaz",         "num"),
     636: ("zarplata_adm",  "num"),
     647: ("yandex",        "num"),
-    658: ("stoyanka",      "num"),
+    659: ("yandex_inst",   "num"),
+    670: ("stoyanka",      "num"),
     691: ("total_admin",   "num"),
     719: ("arenda_reklam", "num"),
     730: ("khairiya",      "num"),
@@ -100,31 +132,12 @@ ROW_MAP = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CHANGED: _fmt() — all numeric styles now output whole numbers (no decimals)
-# Logic (_derive, generate, ROW_MAP) is untouched.
-# ─────────────────────────────────────────────────────────────────────────────
 def _fmt(v, style):
-    """Format a value for display — whole numbers only."""
     rv = int(round(v)) if isinstance(v, (int, float)) else 0
-
-    if style == "dollar":
-        # Negative → ($123,456)  |  Positive → $123,456
-        return f"${rv:,}"
-
-    if style == "pct":
-        return f"{rv}%"
-
-    if style == "pct_dec":
-        # Was: f"{v:.2f}%"  →  Now: whole percent
-        return f"{rv}%"
-
-    if style == "plain":
-        # Was: f"{v:.2f}"  →  Now: comma-separated integer
-        return f"{rv:,}"
-
-    # "num" — pl_pdf uses color (red) for negatives, not parentheses
-    # Was: f"{v:,.2f}"
+    if style == "dollar":  return f"${rv:,}"
+    if style == "pct":     return f"{rv}%"
+    if style == "pct_dec": return f"{rv}%"
+    if style == "plain":   return f"{rv:,}"
     return f"{rv:,}"
 
 
@@ -138,30 +151,29 @@ def _derive(data, n):
 
     mfg = ["komunal","produkt","arenda_cex","proizvodstvo","nalog_imush","zarplata_pr"]
     adm = ["uslugi","prochie","komis_bank","podoh_nalog","inps","sp",
-           "kredit","alimenty","mobil_bank","nds","utilizaciya","kantc",
+           "mobil_bank","nds","utilizaciya","kantc",
            "komis_klik","transport","obed","ofis","arenda_dukon",
            "prazdnik","obuchenie","skidka","bonus","remont","fin_uslugi",
-           "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka"]
+           "kurs_razn","svyaz","zarplata_adm","yandex","yandex_inst","stoyanka"]
     com = ["arenda_reklam","khairiya","reklama"]
 
     def vsum(*keys):
         r = [0.0]*n
         for k in keys:
-            for i, v in enumerate(g(k)):
-                r[i] += v
+            for i, v in enumerate(g(k)): r[i] += v
         return r
 
-    marginal    = [rev[i] - cogs[i] - ladj[i] for i in range(n)]
+    marginal    = [rev[i]-cogs[i]-ladj[i] for i in range(n)]
     total_manuf = vsum(*mfg)
-    gross       = [marginal[i] + other[i] - total_manuf[i] for i in range(n)]
+    gross       = [marginal[i]+other[i]-total_manuf[i] for i in range(n)]
     total_admin = vsum(*adm)
     total_comm  = vsum(*com)
-    op_profit   = [gross[i] - total_admin[i] - total_comm[i] for i in range(n)]
+    op_profit   = [gross[i]-total_admin[i]-total_comm[i] for i in range(n)]
     nalog       = g("nalog_prib")
-    net_profit  = [op_profit[i] - nalog[i] for i in range(n)]
+    net_profit  = [op_profit[i]-nalog[i] for i in range(n)]
 
     def pct(num, den):
-        return [round(num[i]/den[i]*100, 2) if den[i] else 0.0 for i in range(n)]
+        return [round(num[i]/den[i]*100,2) if den[i] else 0.0 for i in range(n)]
 
     return {
         "marginal":     marginal,
@@ -182,28 +194,33 @@ def _derive(data, n):
 
 
 def _is_red_rect(clr):
-    """pdfplumber rect non_stroking_color qizilmi tekshiradi."""
-    if isinstance(clr, (int, float)):
-        return False
+    if isinstance(clr, (int, float)): return False
     if isinstance(clr, (list, tuple)) and len(clr) >= 3:
         return clr[0] > 0.5 and clr[1] < 0.35 and clr[2] < 0.35
     return False
 
 
 def _value_color(v, data_key, base_clr):
-    """
-    Qiymat rangi:
-    - RED_BG_ROWS da manfiy → C_BLACK (qizil fonda ko'rinadi)
-    - Boshqa row larda manfiy → C_RED
-    - Musbat → base_clr
-    """
-    if not isinstance(v, (int, float)):
-        return base_clr
+    if not isinstance(v, (int, float)): return base_clr
     if v < 0:
-        if data_key in RED_BG_ROWS:
-            return C_BLACK
-        return C_RED
+        return C_BLACK if data_key in RED_BG_ROWS else C_RED
     return base_clr
+
+
+def _bold_font(font_name):
+    if "Bold" in font_name: return font_name
+    if "Rubik" in font_name: return "Rubik-Bold"
+    return font_name + "-Bold"
+
+
+# ── Koordinata tuzatish: TOP insert (pastga) + GAP close (yuqoriga) ──
+def _adj_bottom(top_key, bottom):
+    b = bottom
+    if top_key >= TOP_INSERT_AFTER_TOP:
+        b += TOP_INSERT_PT          # tepaga joy → pastga sur
+    if top_key > GAP_SHIFT_AFTER_TOP:
+        b -= GAP_SHIFT_PT           # Кредит/Алименты gap → yuqoriga sur
+    return b
 
 
 def _draw_dynamic_header(cv, col_keys, col_x, page):
@@ -211,35 +228,47 @@ def _draw_dynamic_header(cv, col_keys, col_x, page):
     for ch in page.chars:
         chars_by_top[round(ch["top"])].append(ch)
 
-    year_row_chars = chars_by_top.get(47, [])
-    if year_row_chars:
-        ref = [c for c in year_row_chars if c.get("text", "").strip() and c["x0"] < LABEL_CUTOFF]
-        if ref:
-            size = ref[0].get("size", 6.88)
-            font = resolve_font(ref[0].get("fontname", ""))
-            clr  = to_color(ref[0].get("non_stroking_color", (1, 1, 1)))
-            by   = rl_y(ref[0]["bottom"])
-            for i, cx in enumerate(col_x):
-                if i < len(col_keys):
-                    _, year = _parse_col(col_keys[i])
-                    cv.setFont(font, size)
-                    cv.setFillColor(clr)
-                    cv.drawRightString(cx, by, year)
+    # Год(47), Месяц(59) — TOP_INSERT dan yuqorida, surilmaydi
+    for pdf_top, use_year in [(47, True), (59, False)]:
+        chars = chars_by_top.get(pdf_top, [])
+        ref   = [c for c in chars if c.get("text","").strip() and c["x0"] < LABEL_CUTOFF]
+        if not ref: continue
+        size = ref[0].get("size", 6.88)
+        font = resolve_font(ref[0].get("fontname",""))
+        clr  = to_color(ref[0].get("non_stroking_color",(1,1,1)))
+        by   = rl_y(ref[0]["bottom"])
+        for i, cx in enumerate(col_x):
+            if i >= len(col_keys): break
+            mon, year = _parse_col(col_keys[i])
+            cv.setFont(font, size); cv.setFillColor(clr)
+            cv.drawRightString(cx, by, year if use_year else mon)
 
-    month_row_chars = chars_by_top.get(59, [])
-    if month_row_chars:
-        ref = [c for c in month_row_chars if c.get("text", "").strip() and c["x0"] < LABEL_CUTOFF]
-        if ref:
-            size = ref[0].get("size", 6.88)
-            font = resolve_font(ref[0].get("fontname", ""))
-            clr  = to_color(ref[0].get("non_stroking_color", (1, 1, 1)))
-            by   = rl_y(ref[0]["bottom"])
-            for i, cx in enumerate(col_x):
-                if i < len(col_keys):
-                    mon, _ = _parse_col(col_keys[i])
-                    cv.setFont(font, size)
-                    cv.setFillColor(clr)
-                    cv.drawRightString(cx, by, mon)
+
+def _draw_extra_rows_top(cv, full, col_x, n_cols, std_font, std_size, std_color):
+    """4 yangi metrik qator — Месяц dan keyin, tepada."""
+    C_GRAY = Color(0.9529412, 0.9529412, 0.9529412)
+
+    for idx, (dkey, label, fstyle) in enumerate(EXTRA_ROWS):
+        top    = NEW_ROW_TOPS[idx]
+        bottom = top + 7.0
+        by     = rl_y(bottom)
+        values = full.get(dkey, [0] * n_cols)
+
+        # Fon (alternating gray/white) — jadval kengligida
+        bg = C_GRAY if idx % 2 == 0 else C_WHITE
+        cv.setFillColor(bg)
+        cv.rect(31.4, rl_y(top + NEW_ROW_H), 814.2 - 31.4, NEW_ROW_H, stroke=0, fill=1)
+
+        # Label
+        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        cv.drawString(33.5, by, label)
+
+        # Har oy raqamlari
+        for i, cx in enumerate(col_x):
+            v   = values[i] if i < len(values) else 0
+            txt = _fmt(v, fstyle)
+            cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+            cv.drawRightString(cx, by, txt)
 
 
 def generate(data: dict,
@@ -247,13 +276,16 @@ def generate(data: dict,
              col_keys: list = None) -> str:
 
     register_fonts()
-    template = get_template("pl_statement.pdf")
+    template = get_template("pl_statement_final.pdf")
     output   = get_output_path(output_filename)
     n_cols   = min(len(col_keys), 8) if col_keys else 8
     col_x    = TEMPLATE_COL_X[:n_cols]
     col_keys = (col_keys or [])[:n_cols]
 
     full = {**data, **_derive(data, n_cols)}
+    for dkey in ["units_sold","units_produced","production_cost","production_workers"]:
+        if dkey not in full:
+            full[dkey] = [0] * n_cols
 
     cv = new_canvas(output)
 
@@ -263,45 +295,54 @@ def generate(data: dict,
         cv.setFillColor(C_WHITE)
         cv.rect(0, 0, 842, 1191, stroke=0, fill=1)
 
+        # ── RECTS ──
         for r in page.rects:
-            if not r.get("fill"):
-                continue
+            if not r.get("fill"): continue
             clr = r.get("non_stroking_color")
-            if clr is None:
+            if clr is None: continue
+
+            r_top = r.get("top", 0)
+
+            # Кредит/Алименты bo'sh rect — skip
+            if any(abs(r_top - gt) <= GAP_RECT_TOL for gt in GAP_REMOVE_RECT_TOPS):
                 continue
+
+            r_bottom = _adj_bottom(r_top, r["bottom"])
+
             if _is_red_rect(clr):
                 cv.setFillColor(Color(0.85, 0.11, 0.11))
             else:
                 cv.setFillColor(to_color(clr))
-            cv.rect(r["x0"], rl_y(r["bottom"]), r["width"], r["height"], stroke=0, fill=1)
+            cv.rect(r["x0"], rl_y(r_bottom), r["width"], r["height"], stroke=0, fill=1)
 
         rows = defaultdict(list)
         for ch in page.chars:
             rows[round(ch["top"])].append(ch)
 
+        ref_82    = rows.get(82, [])
+        label_82  = [ch for ch in ref_82 if ch["x0"] < LABEL_CUTOFF and ch.get("text","").strip()]
+        std_font  = resolve_font(label_82[0].get("fontname","")) if label_82 else "Rubik"
+        std_size  = label_82[0].get("size", 6.88) if label_82 else 6.88
+        std_color = to_color(label_82[0].get("non_stroking_color",(0,0,0))) if label_82 else C_BLACK
+
         for top_key in sorted(rows.keys()):
-            chars = rows[top_key]
-            row_text = "".join(ch.get("text", "") for ch in chars)
+
+            if top_key in SKIP_TOPS:
+                continue
+
+            chars    = rows[top_key]
+            row_text = "".join(ch.get("text","") for ch in chars)
             if "#REF" in row_text:
                 continue
 
             if top_key in HEADER_TOPS:
                 for ch in chars:
-                    txt = ch.get("text", "")
-                    if not txt.strip() or ch["x0"] >= LABEL_CUTOFF:
-                        continue
-                    cv.setFont(resolve_font(ch.get("fontname", "")), ch.get("size", 6.88))
-                    cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
-                    cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
+                    txt = ch.get("text","")
+                    if not txt.strip() or ch["x0"] >= LABEL_CUTOFF: continue
+                    cv.setFont(resolve_font(ch.get("fontname","")), ch.get("size",6.88))
+                    cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                    cv.drawString(ch["x0"], rl_y(_adj_bottom(top_key, ch["bottom"])), txt)
                 continue
-
-            for ch in chars:
-                txt = ch.get("text", "")
-                if not txt.strip() or ch["x0"] >= LABEL_CUTOFF:
-                    continue
-                cv.setFont(resolve_font(ch.get("fontname", "")), ch.get("size", 6.88))
-                cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
-                cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
 
             best_key, best_dist = None, 9999
             for rk in ROW_MAP:
@@ -309,42 +350,74 @@ def generate(data: dict,
                 if d < best_dist:
                     best_dist, best_key = d, rk
 
+            is_bold_row = (best_dist <= 6 and best_key is not None and
+                           ROW_MAP.get(best_key, ("",))[0] in BOLD_ROWS)
+
+            # Label chars
+            for ch in chars:
+                txt = ch.get("text","")
+                if not txt.strip() or ch["x0"] >= LABEL_CUTOFF: continue
+                raw_font = resolve_font(ch.get("fontname",""))
+                font = _bold_font(raw_font) if is_bold_row else raw_font
+                cv.setFont(font, ch.get("size",6.88))
+                cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                cv.drawString(ch["x0"], rl_y(_adj_bottom(top_key, ch["bottom"])), txt)
+
             if best_dist <= 6 and best_key is not None:
                 data_key, fmt_style = ROW_MAP[best_key]
                 values = full.get(data_key)
                 if not values:
                     continue
 
-                ref = [ch for ch in chars if ch["x0"] < LABEL_CUTOFF and ch.get("text", "").strip()]
-                if not ref:
-                    ref = chars
-                font     = resolve_font(ref[0].get("fontname", "")) if ref else "Rubik"
-                size     = ref[0].get("size", 6.88) if ref else 6.88
-                base_clr = to_color(ref[0].get("non_stroking_color", (0, 0, 0))) if ref else C_BLACK
+                ref      = [ch for ch in chars if ch["x0"] < LABEL_CUTOFF and ch.get("text","").strip()]
+                if not ref: ref = chars
+                font     = resolve_font(ref[0].get("fontname","")) if ref else std_font
+                size     = ref[0].get("size", std_size) if ref else std_size
+                base_clr = to_color(ref[0].get("non_stroking_color",(0,0,0))) if ref else std_color
 
+                if data_key in BOLD_ROWS:
+                    font = _bold_font(font)
                 if data_key == "raznitsa":
                     base_clr, font = C_RED, "Rubik-Bold"
 
-                dchs = [ch for ch in chars if ch["x0"] >= LABEL_CUTOFF and ch.get("text", "").strip()]
-                by   = rl_y(dchs[0]["bottom"]) if dchs else (rl_y(ref[0]["bottom"]) if ref else 0)
+                dchs = [ch for ch in chars if ch["x0"] >= LABEL_CUTOFF and ch.get("text","").strip()]
+                if dchs:
+                    raw_bottom = dchs[0]["bottom"]
+                elif ref:
+                    raw_bottom = ref[0]["bottom"]
+                else:
+                    raw_bottom = top_key + 7
+                by = rl_y(_adj_bottom(top_key, raw_bottom))
 
                 for i, cx in enumerate(col_x):
-                    v   = values[i] if i < len(values) else 0.0
-                    txt = _fmt(v, fmt_style)
-                    clr = _value_color(v, data_key, base_clr)
-                    cv.setFont(font, size)
-                    cv.setFillColor(clr)
+                    v = values[i] if i < len(values) else 0.0
+
+                    # loss_adj — FAQAT ko'rsatishda belgini teskari qilamiz
+                    # (hisob-kitob, _derive marginal o'zgarmaydi).
+                    # Rang ko'rsatilgan (teskari) qiymatga qarab: manfiy→qizil, musbat→qora.
+                    if data_key == "loss_adj":
+                        disp = -v
+                        txt  = _fmt(disp, fmt_style)
+                        clr  = C_RED if (isinstance(disp,(int,float)) and disp < 0) else C_BLACK
+                    else:
+                        txt = _fmt(v, fmt_style)
+                        clr = _value_color(v, data_key, base_clr)
+
+                    cv.setFont(font, size); cv.setFillColor(clr)
                     cv.drawRightString(cx, by, txt)
+
             else:
                 for ch in chars:
-                    txt = ch.get("text", "")
-                    if not txt.strip() or ch["x0"] < LABEL_CUTOFF:
-                        continue
-                    cv.setFont(resolve_font(ch.get("fontname", "")), ch.get("size", 6.88))
-                    cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
-                    cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
+                    txt = ch.get("text","")
+                    if not txt.strip() or ch["x0"] < LABEL_CUTOFF: continue
+                    cv.setFont(resolve_font(ch.get("fontname","")), ch.get("size",6.88))
+                    cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                    cv.drawString(ch["x0"], rl_y(_adj_bottom(top_key, ch["bottom"])), txt)
 
         _draw_dynamic_header(cv, col_keys, col_x, page)
+
+        # ── 4 yangi metrik qator — TEPADA (Месяц dan keyin) ──
+        _draw_extra_rows_top(cv, full, col_x, n_cols, std_font, std_size, std_color)
 
     cv.save()
     return output
