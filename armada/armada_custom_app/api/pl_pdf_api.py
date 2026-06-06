@@ -119,32 +119,98 @@ def _get_production_cost(col_keys, company):
     return [result.get(ck, 0.0) for ck in col_keys]
 
 
+PROD_ACCOUNT    = "5204 - Зарплата Производства - AM"   # Зарплата Производства
+PAYABLE_ACCOUNT = "2120 - Payroll Payable - AM"          # Hodimlar shu yerda (party)
+
+
 def _get_production_workers(col_keys, company):
     """
-    ROW D: 5204 - Зарплата Производства - AM ga bog'liq
-    DISTINCT employee (party) soni (oyma-oy).
+    ROW D: Ishlab chiqarish ish haqi (5204) belgilangan DISTINCT hodimlar soni (oyma-oy).
+
+    Journal Entry tuzilishi (idx tartibida):
+      - Hodim qatori → account = 2120 (Payroll Payable), party_type = Employee, CREDIT
+      - Darhol keyin uning xarajat qatori → 5204 / 5203 / 5202..., party'siz, DEBIT
+      Aggregate holatda: barcha hodimlar oldin, oxirida yagona summa qatori.
+
+    Mantiq (idx tartibi bo'yicha — summa bir xil bo'lsa ham ishonchli):
+      - Hodimlarni ketma-ket buferga yig'amiz.
+      - Xarajat (debit) qatoriga duch kelganda:
+          * agar u 5204 bo'lsa → buferdagi hodimlarni ishlab chiqarishga qo'shamiz
+          * keyin buferni tozalaymiz (5204 bo'lsin/bo'lmasin)
+      Shunday qilib:
+        paired   (hodim,5204,hodim,5202) → har hodim o'z xarajatiga bog'lanadi
+        aggregate(hodimlar...,5204)      → barchasi 5204 ga
+        aggregate(hodimlar...,5203)      → hech kim (5204 emas)
+        aralash  (5 hodim,5204,3 hodim,5203) → faqat birinchi 5 tasi
+
+    Oy bo'yicha: har JE o'z posting_date oyiga biriktiriladi.
+    Hodim oyiga 1 marta sanaladi (DISTINCT per month).
     """
-    result = {ck: 0 for ck in col_keys}
+    from collections import defaultdict
+
     rows = frappe.db.sql("""
         SELECT
+            je.name                                    AS je_name,
             LOWER(DATE_FORMAT(je.posting_date, '%%b')) AS mon,
             YEAR(je.posting_date)                      AS yr,
-            COUNT(DISTINCT jea.party)                  AS worker_count
+            jea.idx                                    AS idx,
+            jea.account                                AS account,
+            jea.party_type                             AS party_type,
+            jea.party                                  AS party,
+            jea.debit                                  AS debit,
+            jea.credit                                 AS credit
         FROM `tabJournal Entry Account` jea
         JOIN `tabJournal Entry` je ON je.name = jea.parent
-        WHERE je.docstatus   = 1
-          AND je.company     = %(company)s
-          AND jea.account    = '5204 - Зарплата Производства - AM'
-          AND jea.party_type = 'Employee'
-          AND jea.party IS NOT NULL
-          AND jea.party != ''
-        GROUP BY YEAR(je.posting_date), MONTH(je.posting_date)
-    """, {"company": company}, as_dict=True)
+        WHERE je.docstatus = 1
+          AND je.company   = %(company)s
+          AND je.name IN (
+              SELECT parent
+              FROM `tabJournal Entry Account`
+              WHERE account = %(prod)s
+          )
+        ORDER BY je.name, jea.idx
+    """, {"company": company, "prod": PROD_ACCOUNT}, as_dict=True)
+
+    je_lines = defaultdict(list)
+    je_month = {}
     for r in rows:
-        ck = f"{r.mon}_{r.yr}"
-        if ck in result:
-            result[ck] = int(r.worker_count or 0)
-    return [result.get(ck, 0) for ck in col_keys]
+        je_lines[r.je_name].append(r)
+        je_month[r.je_name] = f"{r.mon}_{r.yr}"
+
+    month_emps = defaultdict(set)
+
+    for je_name, lines in je_lines.items():
+        ck    = je_month[je_name]
+        lines = sorted(lines, key=lambda l: l.idx or 0)
+
+        pending = []   # idx tartibida to'plangan hodimlar
+        for l in lines:
+            credit = float(l.credit or 0)
+            debit  = float(l.debit or 0)
+
+            is_emp = (l.account == PAYABLE_ACCOUNT
+                      and l.party_type == "Employee"
+                      and l.party and credit > 0)
+            is_exp = (debit > 0 and l.account != PAYABLE_ACCOUNT)
+
+            if is_emp:
+                pending.append(l.party)
+            elif is_exp:
+                if l.account == PROD_ACCOUNT:
+                    for p in pending:
+                        month_emps[ck].add(p)
+                pending = []   # flush
+
+        # Xavfsizlik to'ri: oxirida hodim qoldi va JE dagi yagona
+        # xarajat akkounti 5204 bo'lsa (teskari tartib ehtimoli) — qo'shamiz
+        if pending:
+            exp_accts = {l.account for l in lines
+                         if float(l.debit or 0) > 0 and l.account != PAYABLE_ACCOUNT}
+            if exp_accts == {PROD_ACCOUNT}:
+                for p in pending:
+                    month_emps[ck].add(p)
+
+    return [len(month_emps.get(ck, set())) for ck in col_keys]
 
 
 # ────────────────────────────────────────────────────────────────────────────────
