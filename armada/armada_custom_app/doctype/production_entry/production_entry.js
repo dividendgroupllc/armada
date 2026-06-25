@@ -51,27 +51,34 @@ frappe.ui.form.on('Production Entry', {
 
     item_to_manufacture: function(frm) {
         if (frm.doc.item_to_manufacture) {
-            // Default BOM bo'lsa avtomatik yuklanadi; bo'lmasa bloklamaydi (dynamic BOM)
-            frappe.call({
-                method: "armada.armada_custom_app.doctype.production_entry.production_entry.get_bom_for_item",
-                args: {
-                    item_code: frm.doc.item_to_manufacture
-                },
-                callback: function(r) {
-                    if (r.message) {
-                        frm.set_value("bom_no", r.message);
-                    } else {
-                        // BOM yo'q — materiallarni qo'lda kiritish yoki bo'sh qoldirish mumkin
-                        frm.set_value("bom_no", "");
-                        frappe.show_alert({
-                            message: __("Bu tovar uchun active BOM yo'q. Materiallarni qo'lda kiriting yoki bo'sh qoldiring."),
-                            indicator: "blue"
-                        });
-                    }
-                }
-            });
+            // Item kartochkasidagi "BOM Not Required" belgisini olamiz
+            frappe.db.get_value("Item", frm.doc.item_to_manufacture, "custom_no_bom_required")
+                .then(function(res) {
+                    const no_bom = !!(res && res.message && res.message.custom_no_bom_required);
+                    frm.set_value("bom_not_required", no_bom ? 1 : 0);
+
+                    // Default BOM bo'lsa avtomatik yuklanadi
+                    frappe.call({
+                        method: "armada.armada_custom_app.doctype.production_entry.production_entry.get_bom_for_item",
+                        args: {
+                            item_code: frm.doc.item_to_manufacture
+                        },
+                        callback: function(r) {
+                            if (r.message) {
+                                frm.set_value("bom_no", r.message);
+                            } else {
+                                frm.set_value("bom_no", "");
+                                // BOM majburiy bo'lmagan tovarlar uchun ogohlantirish chiqarmaymiz
+                                if (!no_bom) {
+                                    frappe.msgprint(__("No active BOM found for {0}", [frm.doc.item_to_manufacture]));
+                                }
+                            }
+                        }
+                    });
+                });
         } else {
             frm.set_value("bom_no", "");
+            frm.set_value("bom_not_required", 0);
             frm.clear_table("items");
             frm.refresh_field("items");
         }

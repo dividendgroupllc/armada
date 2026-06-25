@@ -44,9 +44,23 @@ class ProductionEntry(Document):
                 frappe.throw(_("Required Qty for {0} must be greater than 0").format(item.item_code))
 
     def validate_bom(self):
-        # BOM ixtiyoriy. Tanlangan bo'lsa — tovarga mosligini tekshiramiz.
-        # Tanlanmasa — materiallar Production Entry ichida qo'lda (dynamic) kiritiladi
-        # yoki bo'sh qoldiriladi (masalan Услуга — xom-ashyosiz xizmat tovari).
+        # "BOM Not Required" belgisi — Item kartochkasidan olinadi (yagona haqiqiy manba).
+        if self.item_to_manufacture:
+            self.bom_not_required = cint(
+                frappe.db.get_value("Item", self.item_to_manufacture, "custom_no_bom_required")
+            )
+
+        # Belgilangan tovar uchun BOM ixtiyoriy — materiallar PE ichida qo'lda (dynamic)
+        # kiritiladi yoki bo'sh qoldiriladi (masalan Услуга — xom-ashyosiz xizmat tovari).
+        if self.bom_not_required:
+            return
+
+        if not self.bom_no:
+            frappe.throw(_(
+                "BOM No majburiy. Agar bu tovar BOM'siz ishlab chiqarilsa, "
+                "Item kartochkasida 'BOM Not Required' ni yoqing."
+            ))
+
         if self.bom_no and self.item_to_manufacture:
             bom = frappe.get_doc("BOM", self.bom_no)
             if bom.item != self.item_to_manufacture:

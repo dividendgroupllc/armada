@@ -19,6 +19,7 @@ fixtures = [
                     "segment",
                     "product_type",
                     "standard",
+                    "custom_no_bom_required",
                     "custom_barcode",
                     "custom_sub_account_name",
                     "custom_auto_created_from_sales_order",

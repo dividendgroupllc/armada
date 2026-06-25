@@ -18,6 +18,7 @@
   "item_name",
   "column_break_2",
   "bom_no",
+  "bom_not_required",
   "qty_to_manufacture",
   "target_warehouse",
   "section_break_items",
@@ -106,7 +107,17 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "BOM No",
-   "options": "BOM"
+   "options": "BOM",
+   "mandatory_depends_on": "eval:!doc.bom_not_required"
+  },
+  {
+   "default": "0",
+   "fetch_from": "item_to_manufacture.custom_no_bom_required",
+   "fieldname": "bom_not_required",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "BOM Not Required",
+   "read_only": 1
   },
   {
    "default": "1",
@@ -133,7 +144,8 @@
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Items",
-   "options": "Production Entry Item"
+   "options": "Production Entry Item",
+   "mandatory_depends_on": "eval:!doc.bom_not_required"
   },
   {
    "fieldname": "section_break_remarks",
