@@ -51,7 +51,7 @@ frappe.ui.form.on('Production Entry', {
 
     item_to_manufacture: function(frm) {
         if (frm.doc.item_to_manufacture) {
-            // Get default BOM for item
+            // Default BOM bo'lsa avtomatik yuklanadi; bo'lmasa bloklamaydi (dynamic BOM)
             frappe.call({
                 method: "armada.armada_custom_app.doctype.production_entry.production_entry.get_bom_for_item",
                 args: {
@@ -61,8 +61,12 @@ frappe.ui.form.on('Production Entry', {
                     if (r.message) {
                         frm.set_value("bom_no", r.message);
                     } else {
+                        // BOM yo'q — materiallarni qo'lda kiritish yoki bo'sh qoldirish mumkin
                         frm.set_value("bom_no", "");
-                        frappe.msgprint(__("No active BOM found for {0}", [frm.doc.item_to_manufacture]));
+                        frappe.show_alert({
+                            message: __("Bu tovar uchun active BOM yo'q. Materiallarni qo'lda kiriting yoki bo'sh qoldiring."),
+                            indicator: "blue"
+                        });
                     }
                 }
             });

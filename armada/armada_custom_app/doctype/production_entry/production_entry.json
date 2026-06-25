@@ -106,8 +106,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "BOM No",
-   "options": "BOM",
-   "reqd": 1
+   "options": "BOM"
   },
   {
    "default": "1",
@@ -134,8 +133,7 @@
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Items",
-   "options": "Production Entry Item",
-   "reqd": 1
+   "options": "Production Entry Item"
   },
   {
    "fieldname": "section_break_remarks",

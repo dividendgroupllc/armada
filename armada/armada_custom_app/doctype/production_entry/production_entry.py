@@ -44,6 +44,9 @@ class ProductionEntry(Document):
                 frappe.throw(_("Required Qty for {0} must be greater than 0").format(item.item_code))
 
     def validate_bom(self):
+        # BOM ixtiyoriy. Tanlangan bo'lsa — tovarga mosligini tekshiramiz.
+        # Tanlanmasa — materiallar Production Entry ichida qo'lda (dynamic) kiritiladi
+        # yoki bo'sh qoldiriladi (masalan Услуга — xom-ashyosiz xizmat tovari).
         if self.bom_no and self.item_to_manufacture:
             bom = frappe.get_doc("BOM", self.bom_no)
             if bom.item != self.item_to_manufacture:
@@ -71,53 +74,85 @@ class ProductionEntry(Document):
         )
 
     def create_stock_entry(self):
-        """Submit bo'lganda Stock Entry (Manufacture) yaratish.
-        Agar item Production Additional Cost da bo'lsa — additional_costs ham qo'shiladi."""
+        """Submit bo'lganda Stock Entry yaratish.
+
+        Ikki holat:
+          1) Xom-ashyo bilan (BOM yoki qo'lda) — "Manufacture":
+             xom-ashyo + tayyor mahsulot, additional_costs jadvali bilan.
+          2) Xom-ashyosiz (masalan Услуга) — "Material Receipt":
+             ERPNext "Manufacture" uchun kamida bitta xom-ashyo talab qiladi, shuning uchun
+             tayyor mahsulotni xizmat narxida to'g'ridan-to'g'ri kirim qilamiz. Buxgalteriya
+             natijasi bir xil: Dr Ombor(FG) / Cr expense_account, keyin Journal Entry Cr party.
+        """
+        additional_cost = self._get_additional_cost_data()
+        has_raw_materials = bool(self.items)
+        total_additional = flt(additional_cost.amount) * flt(self.qty_to_manufacture) if additional_cost else 0
+
         se = frappe.new_doc("Stock Entry")
-        se.stock_entry_type = "Manufacture"
         se.posting_date = self.posting_date
         se.posting_time = self.posting_time
         se.set_posting_time = 1
         se.company = self.company
-        se.from_bom = 1
-        se.bom_no = self.bom_no
-        se.fg_completed_qty = self.qty_to_manufacture
         se.custom_production_entry = self.name
 
-        # Add raw materials (source items)
-        for item in self.items:
+        stock_uom = frappe.get_cached_value("Item", self.item_to_manufacture, "stock_uom")
+
+        if has_raw_materials:
+            se.stock_entry_type = "Manufacture"
+            se.from_bom = 1 if self.bom_no else 0
+            if self.bom_no:
+                se.bom_no = self.bom_no
+            se.fg_completed_qty = self.qty_to_manufacture
+
+            # Xom-ashyo (source) qatorlari
+            for item in self.items:
+                se.append("items", {
+                    "item_code": item.item_code,
+                    "qty": item.required_qty,
+                    "s_warehouse": item.source_warehouse,
+                    "uom": item.uom or frappe.get_cached_value("Item", item.item_code, "stock_uom"),
+                    "stock_uom": item.uom or frappe.get_cached_value("Item", item.item_code, "stock_uom"),
+                    "conversion_factor": 1
+                })
+
+            # Tayyor mahsulot
             se.append("items", {
-                "item_code": item.item_code,
-                "qty": item.required_qty,
-                "s_warehouse": item.source_warehouse,
-                "uom": item.uom or frappe.get_cached_value("Item", item.item_code, "stock_uom"),
-                "stock_uom": item.uom or frappe.get_cached_value("Item", item.item_code, "stock_uom"),
-                "conversion_factor": 1
+                "item_code": self.item_to_manufacture,
+                "qty": self.qty_to_manufacture,
+                "t_warehouse": self.target_warehouse,
+                "is_finished_item": 1,
+                "uom": stock_uom,
+                "stock_uom": stock_uom,
+                "conversion_factor": 1,
             })
 
-        # Add finished good (target item)
-        se.append("items", {
-            "item_code": self.item_to_manufacture,
-            "qty": self.qty_to_manufacture,
-            "t_warehouse": self.target_warehouse,
-            "is_finished_item": 1,
-            "uom": frappe.get_cached_value("Item", self.item_to_manufacture, "stock_uom"),
-            "stock_uom": frappe.get_cached_value("Item", self.item_to_manufacture, "stock_uom"),
-            "conversion_factor": 1
-        })
-
-        # Additional costs — agar item Production Additional Cost da bo'lsa
-        additional_cost = self._get_additional_cost_data()
-        total_additional = 0
-
-        if additional_cost:
-            total_additional = flt(additional_cost.amount) * flt(self.qty_to_manufacture)
-            se.append("additional_costs", {
-                "expense_account": additional_cost.expense_account,
-                "description": additional_cost.description
-                    or f"Production cost for {self.item_to_manufacture}",
-                "amount": total_additional,
-            })
+            # Additional costs — narx tayyor mahsulotga taqsimlanadi
+            if additional_cost:
+                se.append("additional_costs", {
+                    "expense_account": additional_cost.expense_account,
+                    "description": additional_cost.description
+                        or f"Production cost for {self.item_to_manufacture}",
+                    "amount": total_additional,
+                })
+        else:
+            # Xom-ashyosiz: tayyor mahsulotni xizmat narxida kirim qilamiz
+            se.stock_entry_type = "Material Receipt"
+            fg_row = {
+                "item_code": self.item_to_manufacture,
+                "qty": self.qty_to_manufacture,
+                "t_warehouse": self.target_warehouse,
+                "uom": stock_uom,
+                "stock_uom": stock_uom,
+                "conversion_factor": 1,
+            }
+            if additional_cost:
+                # Narx = xizmat haqi; offset expense_account ga (keyin JE party'ga o'tkazadi)
+                fg_row["basic_rate"] = flt(additional_cost.amount)
+                fg_row["expense_account"] = additional_cost.expense_account
+            else:
+                # Narx manbasi yo'q — submit xatosini oldini olish uchun 0 valuation'ga ruxsat
+                fg_row["allow_zero_valuation_rate"] = 1
+            se.append("items", fg_row)
 
         se.flags.ignore_permissions = True
         se.insert()
