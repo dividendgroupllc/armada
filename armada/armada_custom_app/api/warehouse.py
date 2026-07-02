@@ -4,10 +4,11 @@
 """
 СКЛАД (Warehouse / Stock Page)
 ───────────────────────────────
-All data from ERPNext standard doctype:
-  Bin — current stock per item_code + warehouse
+All data from ERPNext standard doctypes:
+  Bin                — current stock per item_code + warehouse (no date filter)
+  Stock Ledger Entry — stock balance as of a chosen date (when to_date is passed)
 
-Filters: warehouses (list), item_groups (list), items (list)
+Filters: warehouses (list), item_groups (list), items (list), from_date/to_date
 
 KPI cards: Общее кол-во, Общая стоимость, Кол-во наименований
 Tables:    Остаток по складам, Детальные данные по складу
@@ -72,6 +73,64 @@ def _build_bin_filter_sql(warehouses, item_groups, items, bin_alias="b"):
 	return where, params, need_item_join
 
 
+def _get_stock_as_of(to_date, warehouses, item_groups, items):
+	"""Stock balance per item_code + warehouse as of to_date (inclusive).
+
+	Uses the latest SLE's qty_after_transaction / stock_value per item+warehouse
+	(NOT SUM(actual_qty)) so Stock Reconciliation resets are respected —
+	same approach as ERPNext's Stock Balance report.
+	"""
+	inner_where = ""
+	inner_params = []
+	if warehouses:
+		placeholders = ", ".join(["%s"] * len(warehouses))
+		inner_where += f" AND sle.warehouse IN ({placeholders})"
+		inner_params.extend(warehouses)
+	if items:
+		placeholders = ", ".join(["%s"] * len(items))
+		inner_where += f" AND sle.item_code IN ({placeholders})"
+		inner_params.extend(items)
+
+	outer_where = ""
+	outer_params = []
+	if item_groups:
+		placeholders = ", ".join(["%s"] * len(item_groups))
+		outer_where += f" AND item.item_group IN ({placeholders})"
+		outer_params.extend(item_groups)
+
+	return frappe.db.sql("""
+		SELECT
+			t.item_code,
+			IFNULL(item.item_name, t.item_code) AS item_name,
+			item.item_group,
+			t.warehouse,
+			t.qty_after_transaction AS actual_qty,
+			t.valuation_rate,
+			t.stock_value
+		FROM (
+			SELECT
+				sle.item_code,
+				sle.warehouse,
+				sle.qty_after_transaction,
+				sle.valuation_rate,
+				sle.stock_value,
+				ROW_NUMBER() OVER (
+					PARTITION BY sle.item_code, sle.warehouse
+					ORDER BY sle.posting_datetime DESC, sle.creation DESC
+				) AS rn
+			FROM `tabStock Ledger Entry` sle
+			WHERE sle.is_cancelled = 0
+				AND sle.posting_date <= %s
+				{inner_where}
+		) t
+		LEFT JOIN `tabItem` item ON item.name = t.item_code
+		WHERE t.rn = 1
+			AND (t.qty_after_transaction != 0 OR ABS(t.stock_value) > 0.005)
+			{outer_where}
+	""".format(inner_where=inner_where, outer_where=outer_where),
+		[to_date] + inner_params + outer_params, as_dict=True)
+
+
 # ── Filter-option endpoints ─────────────────────────────────────────────────
 
 @frappe.whitelist()
@@ -109,11 +168,20 @@ def get_warehouse_filter_options():
 # ── KPI Cards ───────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_warehouse_kpis(warehouses=None, warehouse=None, item_groups=None, items=None):
-	"""Warehouse page KPI strip with optional multi-select filters."""
+def get_warehouse_kpis(warehouses=None, warehouse=None, item_groups=None, items=None,
+		from_date=None, to_date=None):
+	"""Warehouse page KPI strip with optional multi-select and date filters."""
 	wh_list = _merge_warehouse_filters(warehouses, warehouse)
 	ig_list = _parse_json_list(item_groups)
 	item_list = _parse_json_list(items)
+
+	if to_date:
+		rows = _get_stock_as_of(to_date, wh_list, ig_list, item_list)
+		return {
+			"total_qty": flt(sum(flt(r.actual_qty) for r in rows), 2),
+			"total_value": flt(sum(flt(r.stock_value) for r in rows), 2),
+			"item_count": len({r.item_code for r in rows}),
+		}
 
 	where, params, need_item_join = _build_bin_filter_sql(wh_list, ig_list, item_list)
 
@@ -141,11 +209,27 @@ def get_warehouse_kpis(warehouses=None, warehouse=None, item_groups=None, items=
 # ── Остаток по складам (summary table) ──────────────────────────────────────
 
 @frappe.whitelist()
-def get_warehouse_summary(warehouses=None, warehouse=None, item_groups=None, items=None):
+def get_warehouse_summary(warehouses=None, warehouse=None, item_groups=None, items=None,
+		from_date=None, to_date=None):
 	"""Stock summary grouped by warehouse."""
 	wh_list = _merge_warehouse_filters(warehouses, warehouse)
 	ig_list = _parse_json_list(item_groups)
 	item_list = _parse_json_list(items)
+
+	if to_date:
+		rows = _get_stock_as_of(to_date, wh_list, ig_list, item_list)
+		grouped = {}
+		for r in rows:
+			g = grouped.setdefault(r.warehouse, {"total_qty": 0, "total_value": 0, "items": set()})
+			g["total_qty"] += flt(r.actual_qty)
+			g["total_value"] += flt(r.stock_value)
+			g["items"].add(r.item_code)
+		return sorted([{
+			"warehouse": wh or "",
+			"total_qty": flt(g["total_qty"], 2),
+			"total_value": flt(g["total_value"], 2),
+			"item_count": len(g["items"]),
+		} for wh, g in grouped.items()], key=lambda x: x["total_value"], reverse=True)
 
 	where, params, need_item_join = _build_bin_filter_sql(wh_list, ig_list, item_list)
 
@@ -176,11 +260,25 @@ def get_warehouse_summary(warehouses=None, warehouse=None, item_groups=None, ite
 # ── Детальные данные по складу (detail table) ────────────────────────────────
 
 @frappe.whitelist()
-def get_warehouse_stock_data(warehouses=None, warehouse=None, item_groups=None, items=None):
-	"""Detailed stock rows from Bin with optional filters."""
+def get_warehouse_stock_data(warehouses=None, warehouse=None, item_groups=None, items=None,
+		from_date=None, to_date=None):
+	"""Detailed stock rows from Bin, or from SLE as of to_date when given."""
 	wh_list = _merge_warehouse_filters(warehouses, warehouse)
 	ig_list = _parse_json_list(item_groups)
 	item_list = _parse_json_list(items)
+
+	if to_date:
+		rows = _get_stock_as_of(to_date, wh_list, ig_list, item_list)
+		rows.sort(key=lambda r: flt(r.stock_value), reverse=True)
+		return [{
+			"item_code": r.item_code or "",
+			"item_name": r.item_name or "",
+			"item_group": r.item_group or "",
+			"warehouse": r.warehouse or "",
+			"actual_qty": flt(r.actual_qty, 2),
+			"valuation_rate": flt(r.valuation_rate, 2),
+			"stock_value": flt(r.stock_value, 2),
+		} for r in rows[:500]]
 
 	where, params, need_item_join = _build_bin_filter_sql(wh_list, ig_list, item_list)
 

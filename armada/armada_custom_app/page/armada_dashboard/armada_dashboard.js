@@ -44,6 +44,10 @@ class ArmadaDashboard {
 			from_date: _month_ago,
 			to_date: _today
 		};
+		this.warehouse_filters = {
+			from_date: _month_ago,
+			to_date: _today
+		};
 
 		// Cached filter options (loaded once at startup)
 		this._sales_filter_options = null;
@@ -167,6 +171,10 @@ class ArmadaDashboard {
 			me.apply_page_date_range('counterparties');
 		});
 
+		this.wrapper.on('click', '#btn-apply-warehouse-date', function() {
+			me.apply_page_date_range('warehouse');
+		});
+
 		// Modal close
 		this.wrapper.on('click', '#party-modal-overlay', function(e) {
 			if (e.target === this) {
@@ -205,6 +213,7 @@ class ArmadaDashboard {
 		if (page === 'sales') return this.sales_filters;
 		if (page === 'cashflow') return this.cashflow_filters;
 		if (page === 'counterparties') return this.counterparties_filters;
+		if (page === 'warehouse') return this.warehouse_filters;
 		return this.main_filters;
 	}
 
@@ -2046,6 +2055,20 @@ class ArmadaDashboard {
 							<div class="ms-options"></div>
 						</div>
 					</div>
+					<div class="filter-item date-range-item">
+						<div class="dark-date-range" id="warehouse-date-range">
+							<span class="date-range-text"></span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="date-range-dropdown" id="warehouse-date-dropdown">
+							<div class="date-inputs">
+								<input type="date" id="warehouse-date-start" class="date-input-dark">
+								<span class="date-separator">-</span>
+								<input type="date" id="warehouse-date-end" class="date-input-dark">
+							</div>
+							<button class="btn-apply-date" id="btn-apply-warehouse-date">Применить</button>
+						</div>
+					</div>
 				</div>
 
 				<!-- KPI Cards -->
@@ -2083,6 +2106,7 @@ class ArmadaDashboard {
 		`;
 
 		$('#page-content').html(content);
+		this.init_page_date_range('warehouse');
 		this._apply_warehouse_filter_options();
 		this._bind_filter_events('warehouse');
 		this.load_warehouse_data();
@@ -2090,11 +2114,15 @@ class ArmadaDashboard {
 
 	load_warehouse_data() {
 		let me = this;
+		const filters = this.warehouse_filters;
 		const warehouses = this._get_multi_select_values('wh_warehouses');
 		const item_groups = this._get_multi_select_values('wh_item_groups');
 		const items = this._get_multi_select_values('wh_items');
 
-		const filter_args = {};
+		const filter_args = {
+			from_date: filters.from_date,
+			to_date: filters.to_date
+		};
 		if (warehouses.length) filter_args.warehouses = JSON.stringify(warehouses);
 		if (item_groups.length) filter_args.item_groups = JSON.stringify(item_groups);
 		if (items.length) filter_args.items = JSON.stringify(items);
