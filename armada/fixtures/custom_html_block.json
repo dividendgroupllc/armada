@@ -1,0 +1,32 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Custom HTML Block",
+  "html": "<div style=\"display: flex; flex-direction: column; gap: 15px; margin-top: 15px;\">\r\n    <div class=\"card p-3\" style=\"background-color: #f8f9fa; border-left: 4px solid #1f78d1;\">\r\n        <p class=\"text-muted mb-1\" style=\"font-size: 13px;\">Наличные (Naqd pul)</p>\r\n        <h4 id=\"kassa1-balance\" style=\"margin: 0; font-weight: 600;\">Yuklanmoqda...</h4>\r\n    </div>\r\n\r\n    <div class=\"card p-3\" style=\"background-color: #f8f9fa; border-left: 4px solid #28a745;\">\r\n        <p class=\"text-muted mb-1\" style=\"font-size: 13px;\">Клик (Click)</p>\r\n        <h4 id=\"kassa2-balance\" style=\"margin: 0; font-weight: 600;\">Yuklanmoqda...</h4>\r\n    </div>\r\n\r\n    <div class=\"card p-3\" style=\"background-color: #f8f9fa; border-left: 4px solid #17a2b8;\">\r\n        <p class=\"text-muted mb-1\" style=\"font-size: 13px;\">Перечисление (Pul o'tkazish)</p>\r\n        <h4 id=\"kassa3-balance\" style=\"margin: 0; font-weight: 600;\">Yuklanmoqda...</h4>\r\n    </div>\r\n</div>",
+  "modified": "2026-04-09 17:07:58.030632",
+  "name": "KASSA QOLDIG'I",
+  "private": 0,
+  "roles": [
+   {
+    "parent": "KASSA QOLDIG'I",
+    "parentfield": "roles",
+    "parenttype": "Custom HTML Block",
+    "role": "Administrator"
+   },
+   {
+    "parent": "KASSA QOLDIG'I",
+    "parentfield": "roles",
+    "parenttype": "Custom HTML Block",
+    "role": "kassa admin"
+   },
+   {
+    "parent": "KASSA QOLDIG'I",
+    "parentfield": "roles",
+    "parenttype": "Custom HTML Block",
+    "role": "taminotchi"
+   }
+  ],
+  "script": "const accounts = [\r\n    { name: \"1110 - Наличные - AM\", id: \"kassa1-balance\" }, \r\n    { name: \"1111 - Клик - AM\", id: \"kassa2-balance\" }, \r\n    { name: \"1112 - Перечисление - AM\", id: \"kassa3-balance\" }       \r\n];\r\n\r\naccounts.forEach(acc => {\r\n    frappe.call({\r\n        method: \"erpnext.accounts.utils.get_balance_on\",\r\n        args: {\r\n            account: acc.name\r\n        },\r\n        callback: function(r) {\r\n            if (r && r.message !== undefined) {\r\n                let formatted_balance = format_currency(r.message, frappe.boot.sysdefaults.currency);\r\n                let el = root_element.querySelector(`#${acc.id}`);\r\n                if (el) {\r\n                    el.innerText = formatted_balance;\r\n                }\r\n            } else {\r\n                let el = root_element.querySelector(`#${acc.id}`);\r\n                if (el) {\r\n                    el.innerText = \"Xatolik\";\r\n                }\r\n            }\r\n        }\r\n    });\r\n});",
+  "style": null
+ }
+]

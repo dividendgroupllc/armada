@@ -219,8 +219,9 @@
   },
   {
    "fieldname": "linked_doctype",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Тип документа",
+   "options": "\nPayment Entry\nJournal Entry",
    "read_only": 1
   },
   {

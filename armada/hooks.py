@@ -7,39 +7,47 @@ app_license = "mit"
 
 # Fixtures
 fixtures = [
-    {
-        "dt": "Custom Field",
-        "filters": [
-            ["dt", "in", ("Stock Entry", "Item", "Kassa", "Sales Invoice")],
-            [
-                "fieldname", "in", (
-                    "custom_production_entry",
-                    "armada_category_section",
-                    "fp_type",
-                    "segment",
-                    "product_type",
-                    "standard",
-                    "custom_no_bom_required",
-                    "custom_barcode",
-                    "custom_sub_account_name",
-                    "custom_auto_created_from_sales_order",
-                )
-            ]
-        ]
-    },
+    # Diqqat: bir doctype uchun bitta fixture bloki bo'lishi shart —
+    # export-fixtures har blokni bitta faylga yozadi, ikkinchi blok
+    # birinchisini o'chirib yuboradi.
     {
         "dt": "Custom Field",
         "filters": [
             ["name", "in", [
+                "BOM-custom_basic_rate",
+                "Customer-contact_number",
                 "Customer-telegram_chat_id",
                 "Customer-telegram_invite_token",
+                "Item-armada_category_section",
+                "Item-custom_barcode",
+                "Item-custom_no_bom_required",
+                "Item-fp_type",
+                "Item-product_type",
+                "Item-segment",
+                "Item-standard",
+                "Kassa-custom_sub_account_name",
+                "Sales Invoice-custom_auto_created_from_sales_order",
+                "Stock Entry-custom_production_entry",
+                "Supplier-contact_number",
                 "Supplier-telegram_chat_id",
                 "Supplier-telegram_invite_token",
             ]]
         ]
     },
     "Account Name Mapping",
-    "Account Name Mapping Item"
+    "Account Name Mapping Item",
+    {
+        "dt": "Custom HTML Block",
+        "filters": [
+            ["name", "in", ["KASSA QOLDIG'I"]]
+        ]
+    },
+    {
+        "dt": "Workspace",
+        "filters": [
+            ["name", "in", ["Taminotchi"]]
+        ]
+    },
 ]
 # Apps
 # ------------------
@@ -66,6 +74,10 @@ doc_events = {
     "Payment Entry": {
         "on_submit": "armada.armada_custom_app.events.payment_entry.on_submit",
         "on_cancel": "armada.armada_custom_app.events.payment_entry.on_cancel",
+    },
+    "BOM": {
+        "onload": "armada.armada_custom_app.events.bom.set_valuation_rate",
+        "validate": "armada.armada_custom_app.events.bom.set_valuation_rate",
     },
 }
 # required_apps = []
