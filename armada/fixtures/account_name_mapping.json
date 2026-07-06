@@ -1,0 +1,68 @@
+[
+ {
+  "account": "5201 - Аренда цех - AM",
+  "docstatus": 0,
+  "doctype": "Account Name Mapping",
+  "mapping_items": [
+   {
+    "parent": "5201 - Аренда цех - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "sfgdfhdfh"
+   },
+   {
+    "parent": "5201 - Аренда цех - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "dfhdfhdfhdfhdfh"
+   },
+   {
+    "parent": "5201 - Аренда цех - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "sfgdfhdfh"
+   },
+   {
+    "parent": "5201 - Аренда цех - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "dfhdfhdfhdfhdfh"
+   }
+  ],
+  "modified": "2026-03-08 17:03:27.735383",
+  "name": "5201 - Аренда цех - AM"
+ },
+ {
+  "account": "5229 - Аренда реклама - AM",
+  "docstatus": 0,
+  "doctype": "Account Name Mapping",
+  "mapping_items": [
+   {
+    "parent": "5229 - Аренда реклама - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "тест -2"
+   },
+   {
+    "parent": "5229 - Аренда реклама - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "тест"
+   },
+   {
+    "parent": "5229 - Аренда реклама - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "тест"
+   },
+   {
+    "parent": "5229 - Аренда реклама - AM",
+    "parentfield": "mapping_items",
+    "parenttype": "Account Name Mapping",
+    "sub_name": "тест -2"
+   }
+  ],
+  "modified": "2026-03-09 02:32:28.697782",
+  "name": "5229 - Аренда реклама - AM"
+ }
+]

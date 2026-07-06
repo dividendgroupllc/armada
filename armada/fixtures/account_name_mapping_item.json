@@ -1,0 +1,82 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-08 17:03:27.735383",
+  "name": "tstlf7spn8",
+  "parent": "5201 - Аренда цех - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "sfgdfhdfh"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-09 02:32:28.697782",
+  "name": "b9vg4htico",
+  "parent": "5229 - Аренда реклама - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "тест"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-08 17:03:27.735383",
+  "name": "tstp6ia76e",
+  "parent": "5201 - Аренда цех - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "dfhdfhdfhdfhdfh"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-03-09 02:32:28.697782",
+  "name": "b9v2gtojkq",
+  "parent": "5229 - Аренда реклама - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "тест -2"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-04-12 15:56:15.975761",
+  "name": "hovfpgbtrp",
+  "parent": "5201 - Аренда цех - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "sfgdfhdfh"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-04-12 15:56:16.127195",
+  "name": "hp16k76dht",
+  "parent": "5229 - Аренда реклама - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "тест"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-04-12 15:56:15.978940",
+  "name": "hovaisrtck",
+  "parent": "5201 - Аренда цех - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "dfhdfhdfhdfhdfh"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Account Name Mapping Item",
+  "modified": "2026-04-12 15:56:16.128252",
+  "name": "hp19fh2q25",
+  "parent": "5229 - Аренда реклама - AM",
+  "parentfield": "mapping_items",
+  "parenttype": "Account Name Mapping",
+  "sub_name": "тест -2"
+ }
+]
