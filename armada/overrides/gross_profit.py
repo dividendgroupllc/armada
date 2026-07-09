@@ -84,10 +84,20 @@ def execute(filters: dict[str, Any] | None = None):
 
     filters = frappe._dict(filters or {})
 
-    # Faqat Customer bo'yicha group qilinganda va armada o'rnatilgan saytda.
-    if (filters.get("group_by") or "").strip() != "Customer":
-        return columns, data
     if "armada" not in frappe.get_installed_apps():
+        return columns, data
+
+    group_by = (filters.get("group_by") or "").strip()
+
+    # erpnext "Total" qatorida Qty bo'sh qoladi -> qty ustuni bor har qanday
+    # group'lashda (Item Code, Customer, Item Group, ...) yig'indi bilan to'ldiramiz.
+    # "Invoice" bundan mustasno: unda qatorlar dict va invoice/item darajalari
+    # aralashgani uchun yig'indi ikki barobar bo'lib ketadi.
+    if group_by and group_by != "Invoice":
+        _fill_total_row_qty(columns, data)
+
+    # Oldingi 2 oy ustunlari faqat Customer bo'yicha group qilinganda.
+    if group_by != "Customer":
         return columns, data
 
     periods = _prior_two_months(filters.get("from_date"))
@@ -101,19 +111,6 @@ def execute(filters: dict[str, Any] | None = None):
         (i for i, col in enumerate(columns) if isinstance(col, dict) and col.get("fieldname") == "qty"),
         len(columns),
     )
-
-    # erpnext "Total" qatorida joriy Qty bo'sh qoladi -> barcha mijozlar
-    # qty yig'indisi bilan to'ldiramiz (yagona total qatori to'liq bo'lishi uchun).
-    if qty_index < len(columns):
-        total_qty = sum(
-            flt(row[qty_index])
-            for row in data
-            if isinstance(row, list) and len(row) > qty_index and row and row[0] != "Total"
-        )
-        for row in data:
-            if isinstance(row, list) and row and row[0] == "Total" and len(row) > qty_index:
-                if not flt(row[qty_index]):
-                    row[qty_index] = total_qty
 
     columns[qty_index:qty_index] = [
         {
@@ -137,6 +134,30 @@ def execute(filters: dict[str, Any] | None = None):
         row[qty_index:qty_index] = values
 
     return columns, data
+
+
+def _fill_total_row_qty(columns: list, data: list) -> None:
+    """"Total" qatoridagi bo'sh Qty katakchasini qatorlar yig'indisi bilan to'ldiradi.
+
+    Qty ustuni bo'lmagan group'lashlarda (Territory, Project, ...) hech narsa
+    qilmaydi. "Invoice" group'lashdagi dict qatorlarga ham tegmaydi.
+    """
+    qty_index = next(
+        (i for i, col in enumerate(columns) if isinstance(col, dict) and col.get("fieldname") == "qty"),
+        None,
+    )
+    if qty_index is None:
+        return
+
+    total_qty = sum(
+        flt(row[qty_index])
+        for row in data
+        if isinstance(row, list) and len(row) > qty_index and row and row[0] != "Total"
+    )
+    for row in data:
+        if isinstance(row, list) and row and row[0] == "Total" and len(row) > qty_index:
+            if not flt(row[qty_index]):
+                row[qty_index] = total_qty
 
 
 def _prior_two_months(from_date: Any) -> list[dict[str, Any]]:
