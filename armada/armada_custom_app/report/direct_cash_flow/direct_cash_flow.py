@@ -797,6 +797,97 @@ def normalize_sort_order():
 # PDF EXPORT  —  pixel-perfect match to the reference Armada Cash Flow PDF
 # ===========================================================================
 
+# ── P&L expense groups (mirrors CoA hierarchy under 5200 - Indirect Expenses).
+# Categories whose accounts sit under these parent accounts are collapsed
+# into a single group row in the PDF. Accounts outside these parents
+# (Клиент/Поставщик receivable-payable accounts, 5232 Налог на прибыль)
+# keep their own category row — same as the P&L layout.
+PNL_GROUP_ORDER = ["52001", "52002", "52003"]
+
+PNL_GROUP_LABELS = {
+    "52001": "Общепроизводственные расходы",
+    "52002": "Административные расходы",
+    "52003": "Коммерческие расходы",
+}
+
+# Categories hidden from the PDF entirely. Their cash movement still counts
+# in activity subtotals and closing balance — only the row is not shown.
+PDF_HIDDEN_CATEGORIES = {"Налог на прибыль"}
+
+
+def _category_pnl_groups(account_map):
+    """category_name → P&L group code ('52001'/'52002'/'52003'),
+    resolved via each mapped account's parent in the Chart of Accounts."""
+    accounts = list(account_map.keys())
+    if not accounts:
+        return {}
+
+    parent_by_account = dict(
+        frappe.get_all(
+            "Account",
+            filters={"name": ["in", accounts]},
+            fields=["name", "parent_account"],
+            as_list=True,
+        )
+    )
+
+    groups = {}
+    for acc, info in account_map.items():
+        code = str(parent_by_account.get(acc) or "").split(" - ")[0].strip()
+        if code in PNL_GROUP_LABELS:
+            groups.setdefault(info["category_name"], code)
+    return groups
+
+
+def _group_pdf_rows(rows, period_keys, cat_groups):
+    """Collapse groupable category rows into P&L group rows (PDF only).
+
+    Group rows are inserted at the position of the first collapsed row,
+    so ungrouped rows before them (Клиент, Поставщик) keep their place and
+    ungrouped rows after them (Налог на прибыль) land below the groups.
+    """
+    out       = []
+    bucket    = {}     # group code → aggregated row
+    insert_at = None
+
+    def flush():
+        nonlocal bucket, insert_at
+        if bucket:
+            group_rows = [bucket[c] for c in PNL_GROUP_ORDER if c in bucket]
+            out[insert_at:insert_at] = group_rows
+        bucket, insert_at = {}, None
+
+    for row in rows:
+        rt = row.get("row_type", "")
+
+        if rt == "data" and row.get("label") in cat_groups:
+            code = cat_groups[row["label"]]
+            grow = bucket.get(code)
+            if grow is None:
+                grow = {
+                    "label":     PNL_GROUP_LABELS[code],
+                    "indent":    0,
+                    "row_type":  "data",
+                    "is_inflow": 0,
+                    "has_value": True,
+                }
+                for k in period_keys:
+                    grow[k] = 0.0
+                bucket[code] = grow
+                if insert_at is None:
+                    insert_at = len(out)
+            for k in period_keys:
+                grow[k] += flt(row.get(k, 0))
+            continue
+
+        if rt in ("header", "subtotal", "balance"):
+            flush()
+        out.append(row)
+
+    flush()
+    return out
+
+
 @frappe.whitelist()
 def export_pdf(filters=None):
     """
@@ -805,6 +896,8 @@ def export_pdf(filters=None):
 
     NOTE: account-level rows (row_type='account') are explicitly excluded
           from the PDF output — PDF stays category-level only.
+          Expense categories are further collapsed into P&L group rows
+          (Общепроизводственные / Административные / Коммерческие).
     """
     import json
     import base64
@@ -819,6 +912,18 @@ def export_pdf(filters=None):
 
     # ── Strip account-level rows for PDF (categories-only view) ──────────
     data = [r for r in data if r.get("row_type") != "account"]
+
+    # ── Collapse expense categories into P&L group rows ──────────────────
+    period_keys = [c["fieldname"] for c in columns if c["fieldname"] != "label"]
+    cat_groups  = _category_pnl_groups(build_account_map())
+    data        = _group_pdf_rows(data, period_keys, cat_groups)
+
+    # ── Hide excluded category rows (values stay in the totals) ──────────
+    data = [
+        r for r in data
+        if not (r.get("row_type") == "data"
+                and str(r.get("label", "")).strip() in PDF_HIDDEN_CATEGORIES)
+    ]
 
     html = _build_pdf_html(columns, data, filters)
 

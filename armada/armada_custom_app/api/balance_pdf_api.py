@@ -22,8 +22,9 @@ import os
 
 ACCOUNT_KEY_MAP = {
     # ── Assets (individual accounts) ──
-    # Основные средства (Fixed assets) — hozircha ERPNext'da yo'q, kerak bo'lsa qo'shing
-    # "XXXX - Оборудование":                    "oborudovanie",
+    # Основные средства (Fixed assets) — bir qatorга yig'iladi
+    "1740 - Office Equipments":               "oborudovanie",
+    "1750 - Plants and Machineries":          "oborudovanie",
     # Запасы (Inventory)
     "1410 - Склад Сырьё":                    "syryo",
     "1420 - Склад Производство":              "polufabrikat",
@@ -34,15 +35,12 @@ ACCOUNT_KEY_MAP = {
     "1112 - Перечисление":                    "perechislenie",
     # Разница в перемещении — hozircha ERPNext'da yo'q
     # "XXXX - Разница в перемещении":            "raznitsa_peremesh",
-    # Дебиторская задолженность (Receivables)
-    "1310 - Debtors":                         "zadolzh_klientov",
-    # Quyidagi accountlar hozircha ERPNext'da yo'q, kerak bo'lsa qo'shing:
-    # "XXXX - Advance to Suppliers":            "avansy_postavshikam",
-    # "XXXX - Employee Receivable":             "zadolzh_sotrudnikov",
-    # "XXXX - Other Debtors":                   "dolg_debitorov",
-    # Прочие активы — hozircha ERPNext'da yo'q
-    # "XXXX - Расходы будущих периодов":         "rashody_budushih",
-    # "XXXX - Прочее":                           "prochee_aktiv",
+
+    # NOTE: Kontragent qatorlari (Задолженность клиентов / Авансы клиентов /
+    # Задолженность поставщикам / Авансы поставщикам / Задолженность
+    # сотрудников(-ам)) bu mapda YO'Q — ular hisob qoldig'idan emas,
+    # Kontragent Otchet kabi har kontragent bo'yicha netto hisoblanadi.
+    # Qarang: _party_balances()
 
     # ── Liabilities & Equity (individual accounts) ──
     # Капитал
@@ -58,22 +56,116 @@ ACCOUNT_KEY_MAP = {
     # Краткосрочные обязательства — hozircha ERPNext'da yo'q
     # "XXXX - Кредит банка (краткосрочный)":     "kredit_bank_kratk",
     # "XXXX - Займы (краткосрочные)":            "zaymy_kratk",
-    # Кредиторская задолженность
-    "2110 - Creditors":                       "zadolzh_postavshik",
-    "2120 - Payroll Payable":                 "zadolzh_sotrudnikam",
     # Hozircha ERPNext'da yo'q:
     # "XXXX - Tax Payable":                      "zadolzh_nalog",
-    # "XXXX - Advance from Customers":           "avansy_klientov",
     # "XXXX - Owner Salary":                     "zarplata_sobstvennika",
     # "XXXX - Other Payables":                   "prochie_obyaz",
 
     # ── ERPNext calculated totals ──
     # Прибыль текущего периода (Provisional P/L from ERPNext)
     "'Provisional Profit / Loss (Credit)'":   "pribyl_tekushih",
-    # Итого строки — ERPNext'dan to'g'ridan-to'g'ri
-    "'Total Asset (Debit)'":                  "_erp_total_asset",
-    "'Total (Credit)'":                       "_erp_total_credit",
+    # NOTE: 'Total Asset (Debit)' / 'Total (Credit)' ataylab map qilinmagan:
+    # ular hisob-based brutto jami bo'lib, kontragent-netto qatorlar bilan
+    # mos kelmaydi. Итого endi PDF'da ko'rinadigan bo'limlar yig'indisidan
+    # hisoblanadi (balance_pdf._derive fallback).
 }
+
+
+# Kontragent Otchet bilan bir xil qoidada taqsimlash:
+# har kontragent bo'yicha netto debet → aktiv qator, netto kredit → passiv qator
+PARTY_DEBIT_KEY = {
+    "Customer": "zadolzh_klientov",      # Задолженность клиентов
+    "Supplier": "avansy_postavshikam",   # Авансы поставщикам
+    "Employee": "zadolzh_sotrudnikov",   # Задолженность сотрудников (aktiv)
+}
+PARTY_CREDIT_KEY = {
+    "Customer": "avansy_klientov",       # Авансы клиентов
+    "Supplier": "zadolzh_postavshik",    # Задолженность поставщикам
+    "Employee": "zadolzh_sotrudnikam",   # Задолженность сотрудникам (passiv)
+}
+
+_MONTH_NUM = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4,  "may": 5,  "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+
+def _column_end_dates(col_keys, period_end_date):
+    """col_key ('jan_2026') → shu ustunning oxirgi sanasi (oy oxiri,
+    period_end bilan cheklangan)."""
+    import calendar
+    from frappe.utils import getdate
+
+    period_end = getdate(period_end_date)
+    ends = []
+    for ck in col_keys:
+        parts = ck.split("_")
+        mon = _MONTH_NUM.get(parts[0].lower())
+        if mon and len(parts) > 1 and parts[1].isdigit():
+            year = int(parts[1])
+            from datetime import date
+            month_end = date(year, mon, calendar.monthrange(year, mon)[1])
+            ends.append(min(month_end, period_end))
+        else:
+            ends.append(period_end)
+    return ends
+
+
+def _party_balances(company, col_keys, period_end_date):
+    """Kontragent Otchet uslubida: har (party_type, party) bo'yicha barcha
+    hisoblardagi netto qoldiq (debit − credit) har ustun oxiriga hisoblanadi,
+    so'ng musbat → aktiv qator, manfiy → passiv qatorga yig'iladi.
+
+    Natija Kontragent Otchet'ning «Сўнгги Дебет» / «Сўнгги Кредит»
+    ЖАМИ qiymatlari bilan aynan mos keladi."""
+    from collections import defaultdict
+    from frappe.utils import flt
+
+    ends = _column_end_dates(col_keys, period_end_date)
+    out = {
+        key: [0.0] * len(ends)
+        for key in list(PARTY_DEBIT_KEY.values()) + list(PARTY_CREDIT_KEY.values())
+    }
+    if not ends:
+        return out
+
+    rows = frappe.db.sql(
+        """
+        SELECT
+            party_type,
+            party,
+            YEAR(posting_date)  AS yr,
+            MONTH(posting_date) AS mo,
+            SUM(debit - credit) AS net
+        FROM `tabGL Entry`
+        WHERE
+            is_cancelled = 0
+            AND company = %(company)s
+            AND party_type IN ('Customer', 'Supplier', 'Employee')
+            AND party IS NOT NULL AND party != ''
+            AND posting_date <= %(last_date)s
+        GROUP BY party_type, party, YEAR(posting_date), MONTH(posting_date)
+        """,
+        {"company": company, "last_date": ends[-1]},
+        as_dict=True,
+    )
+
+    per_party = defaultdict(lambda: defaultdict(float))
+    for r in rows:
+        per_party[(r.party_type, r.party)][(int(r.yr), int(r.mo))] += flt(r.net)
+
+    for (party_type, _party), months in per_party.items():
+        for i, end in enumerate(ends):
+            bal = sum(
+                v for (y, m), v in months.items()
+                if (y, m) <= (end.year, end.month)
+            )
+            if bal > 0:
+                out[PARTY_DEBIT_KEY[party_type]][i] += bal
+            elif bal < 0:
+                out[PARTY_CREDIT_KEY[party_type]][i] += -bal
+
+    return out
 
 @frappe.whitelist()
 def generate_balance_pdf(filters):
@@ -121,6 +213,13 @@ def generate_balance_pdf(filters):
     for flow_key in ("pribyl_tekushih", "dividendy"):
         if flow_key in monthly_data:
             data[flow_key] = monthly_data[flow_key]
+
+    # ── 1c. Kontragent qatorlari — Kontragent Otchet bilan bir xil netto ──
+    data.update(_party_balances(
+        normalized.get("company"),
+        col_keys,
+        normalized.get("period_end_date"),
+    ))
 
     # ── 2. Generate PDF ──
     from armada.armada_custom_app.pdf_engine.balance_pdf import generate
@@ -185,7 +284,12 @@ def _extract_rows(rows, col_keys, key_map):
         # ERPNext returns: Assets as positive, Liabilities as positive
         # For balance report display: liabilities shown as positive too
         # Dividends may be negative — keep as-is
-        data[key] = values
+        # Bir kalitga bir nechta hisob mos kelsa (1740+1750 → oborudovanie)
+        # qiymatlar yig'iladi.
+        if key in data:
+            data[key] = [a + b for a, b in zip(data[key], values)]
+        else:
+            data[key] = values
 
     return data
 
