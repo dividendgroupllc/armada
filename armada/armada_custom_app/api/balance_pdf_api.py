@@ -210,9 +210,29 @@ def generate_balance_pdf(filters):
     monthly_filters["accumulated_values"] = 0
     _, monthly_rows, *_ = bs_execute(frappe._dict(monthly_filters))
     monthly_data = _extract_rows(monthly_rows, col_keys, ACCOUNT_KEY_MAP)
+
+    def _vals(key, src):
+        return (src.get(key, []) + [0.0] * n_cols)[:n_cols]
+
+    # Kumulyativ qiymatlar (oylik oqimga almashtirishdan OLDIN saqlanadi)
+    re_acc  = _vals("pribyl_proshlyh", data)   # 3400 balansi
+    cum_tek = _vals("pribyl_tekushih", data)   # Provisional P/L (kumulyativ)
+    cum_div = _vals("dividendy", data)         # 3200 balansi (kumulyativ)
+
     for flow_key in ("pribyl_tekushih", "dividendy"):
         if flow_key in monthly_data:
             data[flow_key] = monthly_data[flow_key]
+
+    # «прошлых периодов» — balansga bog'langan qoldiq: haqiqiy kapital
+    # (RE + kumulyativ foyda + kumulyativ dividend) minus PDF'da alohida
+    # ko'rsatiladigan joriy oy oqimlari. Shunda har ustunda
+    # Капитал = Активы − Обязательства bo'ladi (Разница = 0).
+    tek_m = _vals("pribyl_tekushih", data)
+    div_m = _vals("dividendy", data)
+    data["pribyl_proshlyh"] = [
+        re_acc[i] + cum_tek[i] + cum_div[i] - tek_m[i] - div_m[i]
+        for i in range(n_cols)
+    ]
 
     # ── 1c. Kontragent qatorlari — Kontragent Otchet bilan bir xil netto ──
     data.update(_party_balances(

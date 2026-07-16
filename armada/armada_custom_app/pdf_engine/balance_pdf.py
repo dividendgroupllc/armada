@@ -32,6 +32,26 @@ BOLD_SECTION_KEYS = {
     "kapital", "dolgosrochnye", "kratkosrochnye", "kred_zadolzh",
 }
 
+# ── Olib tashlangan qatorlar ─────────────────────────────────────────────────
+# (band_start, band_end, shift): band ichidagi template kontent chizilmaydi,
+# top >= band_end bo'lgan kontent shift pt yuqoriga suriladi.
+# Band A: Прочие активы / Расходы будущих периодов / Прочее (361/372/383 → 394)
+# Band B: Долгосрочные + Краткосрочные bo'limlari (540..618 → 640)
+# Bu qatorlar mapping'da hisob yo'qligidan doim 0 edi; qayta kerak bo'lsa
+# tegishli band'ni o'chirish kifoya. «Обязательства» (529) va «Итого» qoladi.
+REMOVE_BANDS = [
+    (356.0, 390.0, 33.0),
+    (534.0, 634.0, 100.0),
+]
+
+
+def _band_skip(top):
+    return any(b0 <= top < b1 for b0, b1, _ in REMOVE_BANDS)
+
+
+def _band_shift(top):
+    return sum(s for _, b1, s in REMOVE_BANDS if top >= b1)
+
 # ─── MONTH NAMES ─────────────────────────────────────────────────────────────
 MONTH_RU = {
     "jan": "Январь",  "feb": "Февраль", "mar": "Март",
@@ -171,13 +191,9 @@ def _derive(data, n):
     zarplata_sobst    = g("zarplata_sobstvennika")
     prochie_obyaz     = g("prochie_obyaz")
 
-    # Retained Earnings roll-forward
-    opening_re = pribyl_pr[0] if pribyl_pr else 0.0
-    pribyl_pr_rolled = [opening_re]
-    for i in range(1, n):
-        pribyl_pr_rolled.append(
-            pribyl_pr_rolled[-1] + pribyl_tek[i - 1] + dividendy[i - 1]
-        )
+    # «прошлых периодов» tayyor keladi (balance_pdf_api: balansga bog'langan
+    # qoldiq — RE + kumulyativ foyda/dividend − joriy oy oqimlari), shu sabab
+    # roll-forward YO'Q: kapital har ustunda Активы − Обязательства ga teng.
 
     # ── Section subtotals (8 new) ────────────────────────────────────────────
     zapasy = [
@@ -197,7 +213,7 @@ def _derive(data, n):
         for i in range(n)
     ]
     kapital = [
-        ustavniy[i] + pribyl_pr_rolled[i] + pribyl_tek[i] + dividendy[i] + investiciya[i]
+        ustavniy[i] + pribyl_pr[i] + pribyl_tek[i] + dividendy[i] + investiciya[i]
         for i in range(n)
     ]
     dolgosrochnye = [
@@ -246,7 +262,7 @@ def _derive(data, n):
         "kred_zadolzh":    kred_zadolzh,
         # Existing
         "empty_cash_row":  [0.0] * n,
-        "pribyl_proshlyh": pribyl_pr_rolled,
+        "pribyl_proshlyh": pribyl_pr,
         "itogo_aktiv":     itogo_aktiv,
         "itogo_passiv":    itogo_passiv,
         "raznitsa":        raznitsa,
@@ -330,12 +346,14 @@ def generate(data: dict,
                 continue
             if r["top"] >= CUTOFF_TOP:
                 continue
+            if _band_skip(r["top"]):
+                continue
             clr = r.get("non_stroking_color")
             if clr is None:
                 continue
             cv.setFillColor(to_color(clr))
-            cv.rect(r["x0"], rl_y(r["bottom"]), r["width"], r["height"],
-                    stroke=0, fill=1)
+            cv.rect(r["x0"], rl_y(r["bottom"] - _band_shift(r["top"])),
+                    r["width"], r["height"], stroke=0, fill=1)
 
         # 2. Group chars by row
         rows = defaultdict(list)
@@ -351,6 +369,11 @@ def generate(data: dict,
             if top_key in SKIP_TOPS:
                 continue
 
+            if _band_skip(top_key):
+                continue
+
+            shift = _band_shift(top_key)
+
             if top_key in HEADER_TOPS:
                 for ch in chars:
                     txt = ch.get("text", "")
@@ -359,7 +382,7 @@ def generate(data: dict,
                     cv.setFont(resolve_font(ch.get("fontname", "")),
                                ch.get("size", 6.90))
                     cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
-                    cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
+                    cv.drawString(ch["x0"], rl_y(ch["bottom"] - shift), txt)
                 continue
 
             # Labels (always draw)
@@ -370,7 +393,7 @@ def generate(data: dict,
                 cv.setFont(resolve_font(ch.get("fontname", "")),
                            ch.get("size", 6.90))
                 cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
-                cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
+                cv.drawString(ch["x0"], rl_y(ch["bottom"] - shift), txt)
 
             # ROW_MAP match
             best_key, best_dist = None, 9999
@@ -408,8 +431,8 @@ def generate(data: dict,
                 # Baseline: prefer data-zone chars, fall back to label chars
                 dchs = [ch for ch in chars
                         if ch["x0"] >= LABEL_CUTOFF and ch.get("text", "").strip()]
-                by = (rl_y(dchs[0]["bottom"]) if dchs
-                      else (rl_y(ref[0]["bottom"]) if ref else 0))
+                by = (rl_y(dchs[0]["bottom"] - shift) if dchs
+                      else (rl_y(ref[0]["bottom"] - shift) if ref else 0))
 
                 for i, cx in enumerate(col_x):
                     v   = values[i] if i < len(values) else 0.0
@@ -428,7 +451,7 @@ def generate(data: dict,
                     cv.setFont(resolve_font(ch.get("fontname", "")),
                                ch.get("size", 6.90))
                     cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
-                    cv.drawString(ch["x0"], rl_y(ch["bottom"]), txt)
+                    cv.drawString(ch["x0"], rl_y(ch["bottom"] - shift), txt)
 
         # 4. Dynamic header
         _draw_dynamic_header(cv, col_keys, col_x, page)
