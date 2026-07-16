@@ -810,6 +810,12 @@ PNL_GROUP_LABELS = {
     "52003": "Коммерческие расходы",
 }
 
+# PDF'da P&L reporti bilan bir xil (hisoblangan/accrual) ko'rsatiladigan
+# guruhlar. Sabab: maosh 2120 orqali yuritilganda naqd to'lov boshqa oyga
+# va boshqa kategoriyaga tushib ketadi (5203/5202 ko'rinmay qoladi).
+# Ro'yxatda yo'q guruhlar naqd (cash) asosda qoladi.
+PDF_ACCRUAL_GROUPS = ("52001", "52002")
+
 # Categories hidden from the PDF entirely. Their cash movement still counts
 # in activity subtotals and closing balance — only the row is not shown.
 PDF_HIDDEN_CATEGORIES = {"Налог на прибыль"}
@@ -964,16 +970,18 @@ def export_pdf(filters=None):
     cat_groups  = _category_pnl_groups(build_account_map())
     data        = _group_pdf_rows(data, period_keys, cat_groups)
 
-    # ── «Общепроизводственные расходы» — P&L reporti bilan bir xil ───────
-    # Naqd to'lov o'rniga hisoblangan xarajat: 2120 orqali to'lovlar barcha
-    # xodimlar maoshini aralashtirib yuboradi va to'lov oyi hisoblangan
-    # oydan kechikadi. Qolgan qatorlar naqd (cash) asosida qoladi.
-    accrual = _pnl_accrual_values(filters.company, get_periods(filters))
-    for row in data:
-        if (row.get("row_type") == "data"
-                and row.get("label") == PNL_GROUP_LABELS["52001"]):
-            for k, v in accrual.items():
-                row[k] = -v
+    # ── Guruh qatorlari — P&L reporti bilan bir xil (hisoblangan) ────────
+    # PDF_ACCRUAL_GROUPS dagi guruhlar naqd to'lov o'rniga hisoblangan
+    # xarajatni ko'rsatadi: 2120 orqali to'lovlar barcha xodimlar maoshini
+    # aralashtirib yuboradi va to'lov oyi hisoblangan oydan kechikadi.
+    periods = get_periods(filters)
+    for group_code in PDF_ACCRUAL_GROUPS:
+        accrual = _pnl_accrual_values(filters.company, periods, group_code)
+        for row in data:
+            if (row.get("row_type") == "data"
+                    and row.get("label") == PNL_GROUP_LABELS[group_code]):
+                for k, v in accrual.items():
+                    row[k] = -v
 
     # ── Hide excluded category rows (values stay in the totals) ──────────
     data = [
