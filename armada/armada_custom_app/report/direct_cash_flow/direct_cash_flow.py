@@ -888,6 +888,52 @@ def _group_pdf_rows(rows, period_keys, cat_groups):
     return out
 
 
+def _pnl_accrual_values(company, periods, group_code="52001"):
+    """P&L reporti bilan bir xil qiymatlar: CoA'da group_code guruhi ostidagi
+    xarajat hisoblarining davr kesimidagi HISOBLANGAN (accrual) summasi.
+
+    Naqd to'lovdan farqi: to'lov oyi emas, xarajat yozilgan oy olinadi —
+    ERPNext Profit and Loss reportidagi guruh jami bilan aynan mos keladi."""
+    accounts = frappe.get_all(
+        "Account",
+        filters={
+            "company": company,
+            "is_group": 0,
+            "parent_account": ["like", f"{group_code} - %"],
+        },
+        pluck="name",
+    )
+    if not accounts:
+        return {}
+
+    rows = frappe.db.sql(
+        """
+        SELECT posting_date, SUM(debit - credit) AS net
+        FROM `tabGL Entry`
+        WHERE
+            is_cancelled = 0
+            AND company = %(company)s
+            AND account IN %(accounts)s
+            AND posting_date BETWEEN %(from_date)s AND %(to_date)s
+        GROUP BY posting_date
+        """,
+        {
+            "company":   company,
+            "accounts":  accounts,
+            "from_date": periods[0]["start"],
+            "to_date":   periods[-1]["end"],
+        },
+        as_dict=True,
+    )
+
+    values = {p["key"]: 0.0 for p in periods}
+    for r in rows:
+        pk = get_period_key(r.posting_date, periods)
+        if pk:
+            values[pk] += flt(r.net)
+    return values
+
+
 @frappe.whitelist()
 def export_pdf(filters=None):
     """
@@ -917,6 +963,17 @@ def export_pdf(filters=None):
     period_keys = [c["fieldname"] for c in columns if c["fieldname"] != "label"]
     cat_groups  = _category_pnl_groups(build_account_map())
     data        = _group_pdf_rows(data, period_keys, cat_groups)
+
+    # ── «Общепроизводственные расходы» — P&L reporti bilan bir xil ───────
+    # Naqd to'lov o'rniga hisoblangan xarajat: 2120 orqali to'lovlar barcha
+    # xodimlar maoshini aralashtirib yuboradi va to'lov oyi hisoblangan
+    # oydan kechikadi. Qolgan qatorlar naqd (cash) asosida qoladi.
+    accrual = _pnl_accrual_values(filters.company, get_periods(filters))
+    for row in data:
+        if (row.get("row_type") == "data"
+                and row.get("label") == PNL_GROUP_LABELS["52001"]):
+            for k, v in accrual.items():
+                row[k] = -v
 
     # ── Hide excluded category rows (values stay in the totals) ──────────
     data = [
