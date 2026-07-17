@@ -45,6 +45,7 @@ ACCOUNT_KEY_MAP = {
     "5236 - Яндекс инстаграм": "yandex_inst",   # CHANGE 3: yangi account
     "5233 - Услуги": "uslugi",
     "5234 - Канцтовар": "kantc",
+    "5237 - Программа": "programma",
     # Commercial
     "5218 - Реклама и маркетинг": "reklama",
     "5226 - Хайрия эхсон": "khairiya",
@@ -117,6 +118,35 @@ def _get_instagram_revenue(col_keys, company):
           AND si.company   = %(company)s
           AND si.customer LIKE 'Инстаграм%%'
         GROUP BY YEAR(si.posting_date), MONTH(si.posting_date)
+    """, {"company": company}, as_dict=True)
+    for r in rows:
+        ck = f"{r.mon}_{r.yr}"
+        if ck in result:
+            result[ck] = float(r.total_amt or 0)
+    return [result.get(ck, 0.0) for ck in col_keys]
+
+
+def _get_instagram_cogs(col_keys, company):
+    """Инстаграм mijozlari bo'yicha COGS (5111) — GL Entry'dan (oyma-oy).
+    5111 ga Sales Invoice va Delivery Note'lar posting qiladi; ikkalasida ham
+    customer bor. Boshqa voucher'lar (Purchase Invoice — landed cost va h.k.)
+    mijozsiz, ular B2B qoldiqqa tushadi (b2b = cogs - instagram_cogs)."""
+    result = {ck: 0.0 for ck in col_keys}
+    rows = frappe.db.sql("""
+        SELECT
+            LOWER(DATE_FORMAT(gl.posting_date, '%%b')) AS mon,
+            YEAR(gl.posting_date)                      AS yr,
+            SUM(gl.debit - gl.credit)                  AS total_amt
+        FROM `tabGL Entry` gl
+        LEFT JOIN `tabSales Invoice` si
+               ON gl.voucher_type = 'Sales Invoice' AND si.name = gl.voucher_no
+        LEFT JOIN `tabDelivery Note` dn
+               ON gl.voucher_type = 'Delivery Note' AND dn.name = gl.voucher_no
+        WHERE gl.account LIKE '5111%%'
+          AND gl.is_cancelled = 0
+          AND gl.company = %(company)s
+          AND (si.customer LIKE 'Инстаграм%%' OR dn.customer LIKE 'Инстаграм%%')
+        GROUP BY YEAR(gl.posting_date), MONTH(gl.posting_date)
     """, {"company": company}, as_dict=True)
     for r in rows:
         ck = f"{r.mon}_{r.yr}"
@@ -325,6 +355,11 @@ def generate_pl_pdf(filters):
     _rev                       = data.get("revenue") or [0.0] * len(col_keys)
     data["b2b_revenue"]        = [round(r) - round(i) for r, i in
                                   zip(_rev, data["instagram_revenue"])]
+    # Сырьевая себестоимость ham xuddi shunday ajratiladi
+    data["instagram_cogs"]     = _get_instagram_cogs(col_keys, company)
+    _cogs                      = data.get("cogs") or [0.0] * len(col_keys)
+    data["b2b_cogs"]           = [round(c) - round(i) for c, i in
+                                  zip(_cogs, data["instagram_cogs"])]
     data["units_produced"]     = _get_units_produced(col_keys, company)
     data["production_cost"]    = _get_production_cost(col_keys, company)
     data["production_workers"] = _get_production_workers(col_keys, company)

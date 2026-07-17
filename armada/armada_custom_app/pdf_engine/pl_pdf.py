@@ -49,6 +49,19 @@ REV_SPLIT_ROWS = [
     ("b2b_revenue",       "B2B выручка",       "num"),
 ]
 
+# ── Сырьевая себестоимость (109) ostiga 2 qator (Инстаграм/B2B) ──
+COGS_INSERT_AFTER_TOP = 115.0    # cogs (109) dan keyin, Убыток (120) dan oldin
+COGS_INSERT_PT        = 23.2     # 2 qator × 11.6
+COGS_BAND_TOP         = 106.7    # cogs qatorining template'dagi fon top'i
+COGS_SPLIT_ROWS = [
+    ("instagram_cogs", "Инстаграм себестоимость", "num"),
+    ("b2b_cogs",       "B2B себестоимость",       "num"),
+]
+
+# ── Программа (5237) — admin oxirida, Стоянка (670) dan keyin ──
+PROG_INSERT_AFTER_TOP = 675.0
+PROG_INSERT_PT        = 11.6
+
 # ── Скидка/Бонус/Яндекс инстаграм: Admin → Kommerciya (root account o'zgargan) ──
 # Template'da admin bo'limida turgan bu 3 qator endi Kommerciya bo'limida,
 # Реклама и маркетинг (741) dan keyin chiziladi.
@@ -186,7 +199,8 @@ def _derive(data, n):
            "mobil_bank","nds","utilizaciya","kantc",
            "komis_klik","transport","obed","ofis","arenda_dukon",
            "prazdnik","obuchenie","remont","fin_uslugi",
-           "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka"]
+           "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka",
+           "programma"]
     com = ["arenda_reklam","khairiya","reklama","skidka","bonus","yandex_inst"]
 
     def vsum(*keys):
@@ -252,6 +266,10 @@ def _adj_bottom(top_key, bottom):
         b += TOP_INSERT_PT          # tepaga joy → pastga sur
     if top_key >= REV_INSERT_AFTER_TOP:
         b += REV_INSERT_PT          # Выручка sub-qatorlari uchun joy
+    if top_key >= COGS_INSERT_AFTER_TOP:
+        b += COGS_INSERT_PT         # Себестоимость sub-qatorlari uchun joy
+    if top_key > PROG_INSERT_AFTER_TOP:
+        b += PROG_INSERT_PT         # Программа qatori uchun joy
     if top_key > GAP_SHIFT_AFTER_TOP:
         b -= GAP_SHIFT_PT           # Кредит/Алименты gap → yuqoriga sur
     if top_key > MOVE_UP_AFTER_1:
@@ -318,25 +336,26 @@ def _draw_extra_rows_top(cv, full, col_x, n_cols, std_font, std_size, std_color)
             cv.drawRightString(cx, by, txt)
 
 
-def _draw_revenue_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
-    """Инстаграм/B2B выручка — Выручка (top 82) qatoridan keyin."""
+def _draw_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color,
+                     page, anchor_top, band_top, split_rows):
+    """Anchor qatoridan keyin Инстаграм/B2B sub-qatorlarini chizadi
+    (gray/white zebra). Выручка va Себестоимость uchun ishlatiladi."""
     C_GRAY = Color(0.9529412, 0.9529412, 0.9529412)
 
-    # Выручка qatorining baseline'idan boshlaymiz
-    chars_82   = [ch for ch in page.chars
-                  if round(ch["top"]) == 82 and ch.get("text","").strip()]
-    raw_bottom = chars_82[0]["bottom"] if chars_82 else 89.0
-    base_by    = _adj_bottom(82, raw_bottom)       # final koordinata (82 surilmaydi)
-    band_top   = REV_BAND_TOP + TOP_INSERT_PT      # revenue fonining final top'i
+    chars      = [ch for ch in page.chars
+                  if round(ch["top"]) == anchor_top and ch.get("text","").strip()]
+    raw_bottom = chars[0]["bottom"] if chars else anchor_top + 7.0
+    base_by    = _adj_bottom(anchor_top, raw_bottom)
+    fin_band   = band_top + _adj_bottom(anchor_top, 0.0)   # anchor surilishi bilan
 
-    for idx, (dkey, label, fstyle) in enumerate(REV_SPLIT_ROWS):
+    for idx, (dkey, label, fstyle) in enumerate(split_rows):
         off    = NEW_ROW_H * (idx + 1)
-        values = full.get(dkey, [0] * n_cols)
+        values = full.get(dkey) or [0.0] * n_cols
 
-        # Fon — revenue oq, keyin gray/white almashinadi
+        # Fon — anchor oq, keyin gray/white almashinadi
         bg = C_GRAY if idx % 2 == 0 else C_WHITE
         cv.setFillColor(bg)
-        cv.rect(31.4, rl_y(band_top + off + NEW_ROW_H), 782.8, NEW_ROW_H,
+        cv.rect(31.4, rl_y(fin_band + off + NEW_ROW_H), 782.8, NEW_ROW_H,
                 stroke=0, fill=1)
 
         by = rl_y(base_by + off)
@@ -346,6 +365,23 @@ def _draw_revenue_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_co
             v = values[i] if i < len(values) else 0
             cv.setFont(std_font, std_size); cv.setFillColor(std_color)
             cv.drawRightString(cx, by, _fmt(v, fstyle))
+
+
+def _draw_programma_row(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
+    """Программа (5237) — admin oxirida, Стоянка dan keyin (oq fon)."""
+    chars_670  = [ch for ch in page.chars
+                  if round(ch["top"]) == 670 and ch.get("text","").strip()]
+    raw_bottom = chars_670[0]["bottom"] if chars_670 else 677.0
+    by         = rl_y(_adj_bottom(670, raw_bottom) + PROG_INSERT_PT)
+    values     = full.get("programma") or [0.0] * n_cols
+
+    cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+    cv.drawString(33.5, by, "Программа")
+    for i, cx in enumerate(col_x):
+        v   = values[i] if i < len(values) else 0.0
+        clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
+        cv.setFont(std_font, std_size); cv.setFillColor(clr)
+        cv.drawRightString(cx, by, _fmt(v, "num"))
 
 
 def _draw_moved_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
@@ -383,6 +419,7 @@ def generate(data: dict,
     full = {**data, **_derive(data, n_cols)}
     for dkey in ["units_sold","instagram_sold","b2b_sold",
                  "instagram_revenue","b2b_revenue",
+                 "instagram_cogs","b2b_cogs","programma",
                  "units_produced","production_cost","production_workers"]:
         if dkey not in full:
             full[dkey] = [0] * n_cols
@@ -534,8 +571,18 @@ def generate(data: dict,
         _draw_extra_rows_top(cv, full, col_x, n_cols, std_font, std_size, std_color)
 
         # ── Инстаграм/B2B выручка — Выручка qatoridan keyin ──
-        _draw_revenue_split_rows(cv, full, col_x, n_cols,
-                                 std_font, std_size, std_color, page)
+        _draw_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color,
+                         page, anchor_top=82, band_top=REV_BAND_TOP,
+                         split_rows=REV_SPLIT_ROWS)
+
+        # ── Инстаграм/B2B себестоимость — Сырьевая себестоимость dan keyin ──
+        _draw_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color,
+                         page, anchor_top=109, band_top=COGS_BAND_TOP,
+                         split_rows=COGS_SPLIT_ROWS)
+
+        # ── Программа — admin bo'limi oxirida ──
+        _draw_programma_row(cv, full, col_x, n_cols,
+                            std_font, std_size, std_color, page)
 
         # ── Скидка/Бонус/Яндекс инстаграм — Kommerciya bo'limida ──
         _draw_moved_commer_rows(cv, full, col_x, n_cols,
