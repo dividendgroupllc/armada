@@ -49,6 +49,23 @@ REV_SPLIT_ROWS = [
     ("b2b_revenue",       "B2B выручка",       "num"),
 ]
 
+# ── Скидка/Бонус/Яндекс инстаграм: Admin → Kommerciya (root account o'zgargan) ──
+# Template'da admin bo'limida turgan bu 3 qator endi Kommerciya bo'limida,
+# Реклама и маркетинг (741) dan keyin chiziladi.
+MOVED_TO_COMMER   = {"skidka", "bonus", "yandex_inst"}
+MOVED_COMMER_ROWS = [("skidka",      "Скидка"),
+                     ("bonus",       "Бонус сотрудникам"),
+                     ("yandex_inst", "Яндекс инстаграм")]
+# Olib tashlanadigan zebra fonlar: Скидка(565.7), Бонус(576.9),
+# Яндекс инст(654.6) + almashinish buzilmasligi uchun Стоянка(665.7) va
+# blank(676.8) ham olib tashlanadi (Стоянка gray qilib qayta chiziladi).
+MOVE_REMOVE_RECT_TOPS = [565.7, 576.9, 654.6, 665.7, 676.8]
+STOYANKA_BAND_TOP = 665.7   # gray qilib qayta chiziladigan band
+MOVE_UP_AFTER_1   = 585.0   # Скидка+Бонус o'rni: pastdagilar -23.2
+MOVE_UP_AFTER_2   = 663.0   # Яндекс инстаграм o'rni: yana -11.6
+MOVE_DOWN_AFTER   = 748.0   # Реклама dan keyin 3 qator: +34.8
+MOVE_ROW_PT       = 11.6
+
 # ── Кредит/Алименты GAP yopish (v6 dan) ──
 GAP_REMOVE_RECT_TOPS = [421.4, 432.5]
 GAP_RECT_TOL         = 1.0
@@ -164,12 +181,13 @@ def _derive(data, n):
     other = g("other_income")
 
     mfg = ["komunal","produkt","arenda_cex","proizvodstvo","nalog_imush","zarplata_pr"]
+    # skidka/bonus/yandex_inst — root account o'zgargan: endi Kommerciyada
     adm = ["uslugi","prochie","komis_bank","podoh_nalog","inps","sp",
            "mobil_bank","nds","utilizaciya","kantc",
            "komis_klik","transport","obed","ofis","arenda_dukon",
-           "prazdnik","obuchenie","skidka","bonus","remont","fin_uslugi",
-           "kurs_razn","svyaz","zarplata_adm","yandex","yandex_inst","stoyanka"]
-    com = ["arenda_reklam","khairiya","reklama"]
+           "prazdnik","obuchenie","remont","fin_uslugi",
+           "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka"]
+    com = ["arenda_reklam","khairiya","reklama","skidka","bonus","yandex_inst"]
 
     def vsum(*keys):
         r = [0.0]*n
@@ -236,6 +254,12 @@ def _adj_bottom(top_key, bottom):
         b += REV_INSERT_PT          # Выручка sub-qatorlari uchun joy
     if top_key > GAP_SHIFT_AFTER_TOP:
         b -= GAP_SHIFT_PT           # Кредит/Алименты gap → yuqoriga sur
+    if top_key > MOVE_UP_AFTER_1:
+        b -= 2 * MOVE_ROW_PT        # Скидка+Бонус ko'chirildi → yuqoriga
+    if top_key > MOVE_UP_AFTER_2:
+        b -= MOVE_ROW_PT            # Яндекс инстаграм ko'chirildi → yuqoriga
+    if top_key >= MOVE_DOWN_AFTER:
+        b += 3 * MOVE_ROW_PT        # Kommerciyada 3 yangi qator → pastga
     return b
 
 
@@ -324,6 +348,27 @@ def _draw_revenue_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_co
             cv.drawRightString(cx, by, _fmt(v, fstyle))
 
 
+def _draw_moved_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
+    """Скидка/Бонус/Яндекс инстаграм — Kommerciya bo'limida, Реклама dan keyin.
+    Bu zonada zebra yo'q (oq fon), faqat matn chiziladi."""
+    chars_741  = [ch for ch in page.chars
+                  if round(ch["top"]) == 741 and ch.get("text","").strip()]
+    raw_bottom = chars_741[0]["bottom"] if chars_741 else 748.0
+    base_by    = _adj_bottom(741, raw_bottom)      # Реклама qatorining final bottom'i
+
+    for idx, (dkey, label) in enumerate(MOVED_COMMER_ROWS):
+        by     = rl_y(base_by + MOVE_ROW_PT * (idx + 1))
+        values = full.get(dkey) or [0.0] * n_cols
+
+        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        cv.drawString(33.5, by, label)
+        for i, cx in enumerate(col_x):
+            v   = values[i] if i < len(values) else 0.0
+            clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
+            cv.setFont(std_font, std_size); cv.setFillColor(clr)
+            cv.drawRightString(cx, by, _fmt(v, "num"))
+
+
 def generate(data: dict,
              output_filename: str = "pl_report.pdf",
              col_keys: list = None) -> str:
@@ -361,6 +406,10 @@ def generate(data: dict,
             if any(abs(r_top - gt) <= GAP_RECT_TOL for gt in GAP_REMOVE_RECT_TOPS):
                 continue
 
+            # Kommerciyaga ko'chirilgan qatorlar zonasi — skip
+            if any(abs(r_top - mt) <= GAP_RECT_TOL for mt in MOVE_REMOVE_RECT_TOPS):
+                continue
+
             r_bottom = _adj_bottom(r_top, r["bottom"])
 
             if _is_red_rect(clr):
@@ -368,6 +417,12 @@ def generate(data: dict,
             else:
                 cv.setFillColor(to_color(clr))
             cv.rect(r["x0"], rl_y(r_bottom), r["width"], r["height"], stroke=0, fill=1)
+
+        # Стоянка zebra fonini gray qilib qayta chizamiz (ko'chirishdan keyin
+        # gray/white almashinishi buzilmasligi uchun; blank qator oq qoladi)
+        cv.setFillColor(Color(0.9529412, 0.9529412, 0.9529412))
+        cv.rect(31.4, rl_y(_adj_bottom(STOYANKA_BAND_TOP, STOYANKA_BAND_TOP + 11.6)),
+                782.8, 11.6, stroke=0, fill=1)
 
         rows = defaultdict(list)
         for ch in page.chars:
@@ -406,6 +461,11 @@ def generate(data: dict,
 
             is_bold_row = (best_dist <= 6 and best_key is not None and
                            ROW_MAP.get(best_key, ("",))[0] in BOLD_ROWS)
+
+            # Kommerciyaga ko'chirilgan qatorlar — template joyidan chizilmaydi
+            if (best_dist <= 6 and best_key is not None and
+                    ROW_MAP.get(best_key, ("",))[0] in MOVED_TO_COMMER):
+                continue
 
             # Label chars
             for ch in chars:
@@ -476,6 +536,10 @@ def generate(data: dict,
         # ── Инстаграм/B2B выручка — Выручка qatoridan keyin ──
         _draw_revenue_split_rows(cv, full, col_x, n_cols,
                                  std_font, std_size, std_color, page)
+
+        # ── Скидка/Бонус/Яндекс инстаграм — Kommerciya bo'limida ──
+        _draw_moved_commer_rows(cv, full, col_x, n_cols,
+                                std_font, std_size, std_color, page)
 
     cv.save()
     return output
