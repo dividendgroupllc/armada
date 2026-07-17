@@ -73,19 +73,138 @@ armada_custom.integer_formatter = function (value, row, column, data, default_fo
     return default_formatter(value, row, column, data);
 };
 
+// ─── TOTAL FOOTER ────────────────────────────────────────────────
+// Skript qo'shadigan "Total" qatori oddiy data qatori bo'lgani uchun
+// kolonka filtri yozilganda yashirinib qolardi. Uning o'rniga datatable'ning
+// showTotalRow footer'ini yoqamiz — u ko'rinayotgan (filtrlangan) qatorlar
+// bo'yicha har safar qayta hisoblanadi va pastda doim turadi.
+
+// O'rtacha/foiz ustunlar oddiy yig'indi bo'lmasligi kerak:
+// fieldname -> [surat, maxraj] (weighted: sum(surat)/sum(maxraj))
+armada_custom.GP_WEIGHTED_COLUMNS = {
+    "avg._selling_rate": ["selling_amount", "qty"],
+    "valuation_rate": ["buying_amount", "qty"],
+    "gross_profit_%": ["gross_profit", "selling_amount"],
+};
+
+armada_custom.gp_column_total = function (values, cell) {
+    const col = cell.column || {};
+    const fname = col.fieldname || col.id;
+    const weighted = armada_custom.GP_WEIGHTED_COLUMNS[fname];
+
+    if (weighted) {
+        let num = 0;
+        let den = 0;
+        (this.bodyRenderer.visibleRows || []).forEach((row) => {
+            row.forEach((c) => {
+                const f = c.column && (c.column.fieldname || c.column.id);
+                if (f === weighted[0]) num += flt(c.content);
+                else if (f === weighted[1]) den += flt(c.content);
+            });
+        });
+        if (!den) return "";
+        const value = num / den;
+        return fname === "gross_profit_%" ? value * 100 : value;
+    }
+
+    return frappe.utils.report_column_total.call(this, values, cell);
+};
+
+armada_custom.gp_datatable_options = function (options) {
+    options = options || {};
+    // prepare_columns ichida bo'sh {} bilan ham chaqiriladi — himoya
+    if (!Array.isArray(options.data) || !options.columns || !options.columns.length) {
+        return options;
+    }
+
+    let group_by = null;
+    try {
+        group_by = frappe.query_report.get_filter_value("group_by");
+    } catch (e) {
+        return options;
+    }
+
+    // Invoice group'lashda qatorlar ikki darajali (indent) — footer yig'indisi
+    // ikki barobar bo'lib ketadi, shuning uchun faqat boshqa group'lashlarda.
+    const use_footer = Boolean(group_by && group_by !== "Invoice");
+    // Doim boolean qo'yamiz: showTotalRow (false) !== add_total_row (0) bo'lgani
+    // uchun query_report datatable'ni har safar qayta yaratadi va group_by
+    // almashganda bu funksiya qayta ishlaydi.
+    options.showTotalRow = use_footer;
+    if (!use_footer) return options;
+
+    // Skriptning o'z "Total" qatorini olib tashlaymiz — footer o'zi hisoblaydi.
+    const first_field = options.columns[0].id || options.columns[0].fieldname;
+    options.data = options.data.filter((row) => row && row[first_field] !== "Total");
+    options.hooks = Object.assign({}, options.hooks, {
+        columnTotal: armada_custom.gp_column_total,
+    });
+    return options;
+};
+
+// CSV export va Print/PDF standart yo'lda footer'ni faqat add_total_row=1 da
+// qo'shadi; bizda u 0 (aks holda server ikkinchi total qo'shadi), shuning
+// uchun footer qatorini o'zimiz qo'shamiz. Boshqa reportlarga ta'sir qilmaydi.
+armada_custom.patch_total_export = function () {
+    const qr = frappe.query_report;
+    if (!qr || qr.__armada_total_export_patched) return Boolean(qr && qr.__armada_total_export_patched);
+    qr.__armada_total_export_patched = true;
+
+    const needs_footer = () =>
+        qr.datatable &&
+        qr.datatable.options.showTotalRow &&
+        !qr.raw_data.add_total_row;
+
+    const orig_csv = qr.get_data_for_csv.bind(qr);
+    qr.get_data_for_csv = function (include_indentation) {
+        const rows = orig_csv(include_indentation);
+        if (needs_footer()) {
+            const std = qr.datatable.datamanager.getStandardColumnCount();
+            const total_row = qr.datatable.bodyRenderer
+                .getTotalRow()
+                .slice(std)
+                .map((cell) => cell.content ?? "");
+            if (!total_row[0]) total_row[0] = __("Total");
+            rows.push(total_row);
+        }
+        return rows;
+    };
+
+    const orig_print = qr.get_data_for_print.bind(qr);
+    qr.get_data_for_print = function () {
+        const rows = orig_print();
+        if (needs_footer() && rows.length) {
+            const total_row = qr.datatable.bodyRenderer.getTotalRow().reduce((row, cell) => {
+                if (cell.column.id) row[cell.column.id] = cell.content;
+                row.is_total_row = true;
+                return row;
+            }, {});
+            const first_field = qr.columns?.[0]?.id;
+            if (first_field && !total_row[first_field]) total_row[first_field] = __("Total");
+            if (!total_row.currency && rows[0].currency) total_row.currency = rows[0].currency;
+            rows.push(total_row);
+        }
+        return rows;
+    };
+    return true;
+};
+
 // ─── PATCH ───────────────────────────────────────────────────────
 armada_custom.apply_patch = function () {
-    if (
-        frappe.query_reports?.["Gross Profit"] &&
-        !frappe.query_reports["Gross Profit"].__armada_patched
-    ) {
-        frappe.query_reports["Gross Profit"].formatter = armada_custom.integer_formatter;
-        frappe.query_reports["Gross Profit"].__armada_patched = true;
-        window._armada_col_logged = false; // reset log
-        console.info("[Armada] ✓ Gross Profit patched");
-        return true;
+    let report_patched = false;
+    if (frappe.query_reports?.["Gross Profit"]) {
+        if (!frappe.query_reports["Gross Profit"].__armada_patched) {
+            frappe.query_reports["Gross Profit"].formatter = armada_custom.integer_formatter;
+            frappe.query_reports["Gross Profit"].get_datatable_options =
+                armada_custom.gp_datatable_options;
+            frappe.query_reports["Gross Profit"].__armada_patched = true;
+            window._armada_col_logged = false; // reset log
+            console.info("[Armada] ✓ Gross Profit patched");
+        }
+        report_patched = true;
     }
-    return false;
+    const export_patched = armada_custom.patch_total_export();
+    return report_patched && export_patched;
 };
 
 // ─── ROUTE WATCHER ───────────────────────────────────────────────
