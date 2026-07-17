@@ -20,7 +20,7 @@ from reportlab.lib.colors import Color
 from armada.armada_custom_app.pdf_engine.base_generator import (
     register_fonts, get_template, get_output_path,
     new_canvas, resolve_font, to_color, rl_y,
-    C_BLACK, C_WHITE, C_RED,
+    C_BLACK, C_WHITE, C_RED, bg_fill_objects,
 )
 
 TEMPLATE_COL_X = [290.0, 364.6, 439.2, 513.7, 588.3, 662.9, 737.5, 812.0]
@@ -32,11 +32,22 @@ SKIP_TOPS = {282}   # DejaVu Bold overlay label (template) — overlap
 # ── TEPADA 4 yangi qator uchun joy ochish ──
 # Bu top dan PASTdagi hamma narsa pastga suriladi:
 TOP_INSERT_AFTER_TOP = 67.0
-# Surilish (4 qator × 11.6pt):
-TOP_INSERT_PT        = 46.4
-# 4 yangi qator tops (Месяц=59 dan keyin):
-NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8]
+# Surilish (6 qator × 11.6pt):
+TOP_INSERT_PT        = 69.6
+# 6 yangi qator tops (Месяц=59 dan keyin):
+NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8, 116.4, 128.0]
 NEW_ROW_H            = 11.6
+
+# ── Выручка (82) ostiga 2 yangi qator (Инстаграм/B2B выручка) ──
+# Bu top dan boshlab hamma narsa qo'shimcha pastga suriladi
+# (revenue qatori 82 da, spacer 89.7 da, Себестоимость band 95 da):
+REV_INSERT_AFTER_TOP = 89.0
+REV_INSERT_PT        = 23.2      # 2 qator × 11.6
+REV_BAND_TOP         = 79.2      # revenue qatorining template'dagi fon top'i
+REV_SPLIT_ROWS = [
+    ("instagram_revenue", "Инстаграм выручка", "num"),
+    ("b2b_revenue",       "B2B выручка",       "num"),
+]
 
 # ── Кредит/Алименты GAP yopish (v6 dan) ──
 GAP_REMOVE_RECT_TOPS = [421.4, 432.5]
@@ -54,12 +65,15 @@ MONTH_RU = {
 RED_BG_ROWS = {"marginal", "gross_profit", "op_profit", "net_profit"}
 BOLD_ROWS   = {"total_manuf"}
 
-# 4 yangi metrik qator (tepada)
+# 6 yangi metrik qator (tepada)
+# 4-element: qator uslubi — "red" (total ko'rinishi) yoki "zebra" (oddiy)
 EXTRA_ROWS = [
-    ("units_sold",         "Количество продаж",                  "plain"),
-    ("units_produced",     "Количество произведённых изделий",    "plain"),
-    ("production_cost",    "Сумма производства",                  "num"),
-    ("production_workers", "Количество производственных рабочих", "plain"),
+    ("units_sold",         "Количество продаж",                   "plain", "red"),
+    ("instagram_sold",     "Инстаграм продаж",                    "plain", "zebra"),
+    ("b2b_sold",           "B2B продаж",                          "plain", "zebra"),
+    ("units_produced",     "Количество произведённых изделий",    "plain", "zebra"),
+    ("production_cost",    "Сумма производства",                  "num",   "zebra"),
+    ("production_workers", "Количество производственных рабочих", "plain", "zebra"),
 ]
 
 
@@ -218,6 +232,8 @@ def _adj_bottom(top_key, bottom):
     b = bottom
     if top_key >= TOP_INSERT_AFTER_TOP:
         b += TOP_INSERT_PT          # tepaga joy → pastga sur
+    if top_key >= REV_INSERT_AFTER_TOP:
+        b += REV_INSERT_PT          # Выручка sub-qatorlari uchun joy
     if top_key > GAP_SHIFT_AFTER_TOP:
         b -= GAP_SHIFT_PT           # Кредит/Алименты gap → yuqoriga sur
     return b
@@ -245,30 +261,67 @@ def _draw_dynamic_header(cv, col_keys, col_x, page):
 
 
 def _draw_extra_rows_top(cv, full, col_x, n_cols, std_font, std_size, std_color):
-    """4 yangi metrik qator — Месяц dan keyin, tepada."""
-    C_GRAY = Color(0.9529412, 0.9529412, 0.9529412)
+    """6 yangi metrik qator — Месяц dan keyin, tepada."""
+    C_GRAY   = Color(0.9529412, 0.9529412, 0.9529412)
+    C_RED_BG = Color(0.85, 0.11, 0.11)   # template'dagi total qatorlar bilan bir xil
 
-    for idx, (dkey, label, fstyle) in enumerate(EXTRA_ROWS):
+    zebra = 0
+    for idx, (dkey, label, fstyle, rstyle) in enumerate(EXTRA_ROWS):
         top    = NEW_ROW_TOPS[idx]
         bottom = top + 7.0
         by     = rl_y(bottom)
         values = full.get(dkey, [0] * n_cols)
 
-        # Fon (alternating gray/white) — jadval kengligida
-        bg = C_GRAY if idx % 2 == 0 else C_WHITE
+        # Fon — jadval kengligida
+        if rstyle == "red":
+            bg, row_font, row_clr = C_RED_BG, "Rubik-Bold", C_WHITE
+        else:
+            bg = C_GRAY if zebra % 2 == 0 else C_WHITE
+            zebra += 1
+            row_font, row_clr = std_font, std_color
         cv.setFillColor(bg)
         cv.rect(31.4, rl_y(top + NEW_ROW_H), 814.2 - 31.4, NEW_ROW_H, stroke=0, fill=1)
 
         # Label
-        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        cv.setFont(row_font, std_size); cv.setFillColor(row_clr)
         cv.drawString(33.5, by, label)
 
         # Har oy raqamlari
         for i, cx in enumerate(col_x):
             v   = values[i] if i < len(values) else 0
             txt = _fmt(v, fstyle)
-            cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+            cv.setFont(row_font, std_size); cv.setFillColor(row_clr)
             cv.drawRightString(cx, by, txt)
+
+
+def _draw_revenue_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
+    """Инстаграм/B2B выручка — Выручка (top 82) qatoridan keyin."""
+    C_GRAY = Color(0.9529412, 0.9529412, 0.9529412)
+
+    # Выручка qatorining baseline'idan boshlaymiz
+    chars_82   = [ch for ch in page.chars
+                  if round(ch["top"]) == 82 and ch.get("text","").strip()]
+    raw_bottom = chars_82[0]["bottom"] if chars_82 else 89.0
+    base_by    = _adj_bottom(82, raw_bottom)       # final koordinata (82 surilmaydi)
+    band_top   = REV_BAND_TOP + TOP_INSERT_PT      # revenue fonining final top'i
+
+    for idx, (dkey, label, fstyle) in enumerate(REV_SPLIT_ROWS):
+        off    = NEW_ROW_H * (idx + 1)
+        values = full.get(dkey, [0] * n_cols)
+
+        # Fon — revenue oq, keyin gray/white almashinadi
+        bg = C_GRAY if idx % 2 == 0 else C_WHITE
+        cv.setFillColor(bg)
+        cv.rect(31.4, rl_y(band_top + off + NEW_ROW_H), 782.8, NEW_ROW_H,
+                stroke=0, fill=1)
+
+        by = rl_y(base_by + off)
+        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        cv.drawString(33.5, by, label)
+        for i, cx in enumerate(col_x):
+            v = values[i] if i < len(values) else 0
+            cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+            cv.drawRightString(cx, by, _fmt(v, fstyle))
 
 
 def generate(data: dict,
@@ -283,7 +336,9 @@ def generate(data: dict,
     col_keys = (col_keys or [])[:n_cols]
 
     full = {**data, **_derive(data, n_cols)}
-    for dkey in ["units_sold","units_produced","production_cost","production_workers"]:
+    for dkey in ["units_sold","instagram_sold","b2b_sold",
+                 "instagram_revenue","b2b_revenue",
+                 "units_produced","production_cost","production_workers"]:
         if dkey not in full:
             full[dkey] = [0] * n_cols
 
@@ -296,8 +351,7 @@ def generate(data: dict,
         cv.rect(0, 0, 842, 1191, stroke=0, fill=1)
 
         # ── RECTS ──
-        for r in page.rects:
-            if not r.get("fill"): continue
+        for r in bg_fill_objects(page):
             clr = r.get("non_stroking_color")
             if clr is None: continue
 
@@ -416,8 +470,12 @@ def generate(data: dict,
 
         _draw_dynamic_header(cv, col_keys, col_x, page)
 
-        # ── 4 yangi metrik qator — TEPADA (Месяц dan keyin) ──
+        # ── 6 yangi metrik qator — TEPADA (Месяц dan keyin) ──
         _draw_extra_rows_top(cv, full, col_x, n_cols, std_font, std_size, std_color)
+
+        # ── Инстаграм/B2B выручка — Выручка qatoridan keyin ──
+        _draw_revenue_split_rows(cv, full, col_x, n_cols,
+                                 std_font, std_size, std_color, page)
 
     cv.save()
     return output

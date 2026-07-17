@@ -103,6 +103,18 @@ C_YELLOW     = Color(1.0,    0.8510, 0.4   )   # Операционные рас
 C_PEACH      = Color(1.0,    0.9490, 0.8   )   # gross/net subtotals
 C_LIGHT_GRAY = Color(0.9529, 0.9529, 0.9529)   # regular data rows
 
+# ─── BACKGROUND FILL OBJECTS ─────────────────────────────────────────────────
+def bg_fill_objects(page):
+    """
+    Template'dagi to'ldirilgan fon to'rtburchaklari — pdfplumber versiyasidan
+    qat'i nazar. pdfplumber <=0.11.5 to'ldirilgan path'larni `curves` deb,
+    yangiroq versiyalar (0.11.10) esa `rects` deb tasniflaydi. Ikkala
+    ro'yxatni ham qaytaramiz, aks holda eski versiyada barcha fon ranglari
+    (qizil total qatorlar, kulrang zebra, seksiya sarlavhalari) yo'qoladi.
+    """
+    objs = list(page.rects) + list(page.curves)
+    return [o for o in objs if o.get("fill")]
+
 # ─── COORDINATE CONVERSION ───────────────────────────────────────────────────
 def rl_y(pdf_bottom: float, page_h: float = PAGE_H) -> float:
     """
@@ -130,9 +142,7 @@ def clone_backgrounds(cv, template_pdf_path: str, page_h: float = PAGE_H):
         cv.rect(0, 0, PAGE_W, page_h, stroke=0, fill=1)
 
         # All filled rects in source order (preserves z-layering)
-        for r in page.rects:
-            if not r.get("fill"):
-                continue
+        for r in bg_fill_objects(page):
             clr = r.get("non_stroking_color")
             if clr is None:
                 continue

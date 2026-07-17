@@ -77,6 +77,54 @@ def _get_units_sold(col_keys, company):
     return [result.get(ck, 0.0) for ck in col_keys]
 
 
+def _get_instagram_sold(col_keys, company):
+    """ROW A1: Инстаграм mijozlari (customer 'Инстаграм%' bilan boshlanadi)
+    bo'yicha submitted Sales Invoice Item qty summasi (oyma-oy).
+    B2B = units_sold - instagram_sold (API da hisoblanadi)."""
+    result = {ck: 0.0 for ck in col_keys}
+    rows = frappe.db.sql("""
+        SELECT
+            LOWER(DATE_FORMAT(si.posting_date, '%%b')) AS mon,
+            YEAR(si.posting_date)                      AS yr,
+            SUM(sii.qty)                               AS total_qty
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.docstatus = 1
+          AND si.company   = %(company)s
+          AND si.customer LIKE 'Инстаграм%%'
+        GROUP BY YEAR(si.posting_date), MONTH(si.posting_date)
+    """, {"company": company}, as_dict=True)
+    for r in rows:
+        ck = f"{r.mon}_{r.yr}"
+        if ck in result:
+            result[ck] = float(r.total_qty or 0)
+    return [result.get(ck, 0.0) for ck in col_keys]
+
+
+def _get_instagram_revenue(col_keys, company):
+    """Инстаграм mijozlari bo'yicha submitted Sales Invoice Item
+    base_net_amount summasi (oyma-oy) — P&L 'Выручка' qatori bilan bir manba
+    (4110 ga net summa posting bo'ladi). B2B = revenue - instagram_revenue."""
+    result = {ck: 0.0 for ck in col_keys}
+    rows = frappe.db.sql("""
+        SELECT
+            LOWER(DATE_FORMAT(si.posting_date, '%%b')) AS mon,
+            YEAR(si.posting_date)                      AS yr,
+            SUM(sii.base_net_amount)                   AS total_amt
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.docstatus = 1
+          AND si.company   = %(company)s
+          AND si.customer LIKE 'Инстаграм%%'
+        GROUP BY YEAR(si.posting_date), MONTH(si.posting_date)
+    """, {"company": company}, as_dict=True)
+    for r in rows:
+        ck = f"{r.mon}_{r.yr}"
+        if ck in result:
+            result[ck] = float(r.total_amt or 0)
+    return [result.get(ck, 0.0) for ck in col_keys]
+
+
 def _get_units_produced(col_keys, company):
     """ROW B: Production Entry qty_to_manufacture summasi (oyma-oy)."""
     result = {ck: 0.0 for ck in col_keys}
@@ -265,6 +313,18 @@ def generate_pl_pdf(filters):
     company = normalized.get("company") or "ARMADA MATRAS"
 
     data["units_sold"]         = _get_units_sold(col_keys, company)
+    data["instagram_sold"]     = _get_instagram_sold(col_keys, company)
+    # Yaxlitlab ayiramiz — PDF da total = insta + b2b aynan mos tushishi uchun
+    # (kasr qty bo'lsa, float ayirmada ko'rsatilgan yig'indi 1 ga farq qilishi mumkin)
+    data["b2b_sold"]           = [round(u) - round(i) for u, i in
+                                  zip(data["units_sold"], data["instagram_sold"])]
+    # Выручка ham xuddi shunday Инстаграм/B2B ga ajratiladi.
+    # Total sifatida report'dagi revenue olinadi — ko'rsatilganda
+    # revenue = insta + b2b aynan mos tushishi uchun yaxlitlab ayiramiz.
+    data["instagram_revenue"]  = _get_instagram_revenue(col_keys, company)
+    _rev                       = data.get("revenue") or [0.0] * len(col_keys)
+    data["b2b_revenue"]        = [round(r) - round(i) for r, i in
+                                  zip(_rev, data["instagram_revenue"])]
     data["units_produced"]     = _get_units_produced(col_keys, company)
     data["production_cost"]    = _get_production_cost(col_keys, company)
     data["production_workers"] = _get_production_workers(col_keys, company)

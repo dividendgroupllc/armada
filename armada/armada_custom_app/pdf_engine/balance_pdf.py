@@ -17,6 +17,7 @@ from armada.armada_custom_app.pdf_engine.base_generator import (
     register_fonts, get_template, get_output_path,
     new_canvas, resolve_font, to_color, rl_y,
     C_BLACK, C_WHITE, C_RED, C_DARK_GRAY, PAGE_W, PAGE_H,
+    bg_fill_objects,
 )
 
 # ─── LAYOUT CONSTANTS ────────────────────────────────────────────────────────
@@ -341,9 +342,7 @@ def generate(data: dict,
         # 1. Backgrounds
         cv.setFillColor(C_WHITE)
         cv.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
-        for r in page.rects:
-            if not r.get("fill"):
-                continue
+        for r in bg_fill_objects(page):
             if r["top"] >= CUTOFF_TOP:
                 continue
             if _band_skip(r["top"]):
