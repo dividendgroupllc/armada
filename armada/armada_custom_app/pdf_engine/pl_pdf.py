@@ -29,13 +29,22 @@ HEADER_TOPS    = {36, 37, 47, 59}
 
 SKIP_TOPS = {282}   # DejaVu Bold overlay label (template) — overlap
 
-# ── TEPADA 4 yangi qator uchun joy ochish ──
+# ── Выручка/Себестоимость bo'lim sarlavhalari OLIB TASHLANGAN ──
+# Ularning o'rniga ostidagi data qatorlar (revenue, cogs) qizil
+# kategoriya qatoriga aylanadi (oq bold matn, band fon).
+HDR_REMOVE_RECT_TOPS = [67.5, 95.0]   # sarlavha band rectlari (x0>30)
+HDR_SKIP_CHAR_TOPS   = {70, 97}       # "Выручка"(+revenue_mult), "Себестоимость"
+REVHDR_REMOVE_AFTER  = 78.0           # revenue va pastdagilar -11.6
+COGSHDR_REMOVE_AFTER = 106.0          # cogs va pastdagilar -11.6
+HDR_ROW_PT           = 11.6
+
+# ── TEPADA yangi metrik qatorlar uchun joy ochish ──
 # Bu top dan PASTdagi hamma narsa pastga suriladi:
 TOP_INSERT_AFTER_TOP = 67.0
-# Surilish (6 qator × 11.6pt):
-TOP_INSERT_PT        = 69.6
-# 6 yangi qator tops (Месяц=59 dan keyin):
-NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8, 116.4, 128.0]
+# Surilish (7 qator × 11.6pt):
+TOP_INSERT_PT        = 81.2
+# 7 yangi qator tops (Месяц=59 dan keyin):
+NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8, 116.4, 128.0, 139.6]
 NEW_ROW_H            = 11.6
 
 # ── Выручка (82) ostiga 2 yangi qator (Инстаграм/B2B выручка) ──
@@ -92,15 +101,20 @@ MONTH_RU = {
     "oct":"Октябрь", "nov":"Ноябрь",  "dec":"Декабрь",
 }
 
-RED_BG_ROWS = {"marginal", "gross_profit", "op_profit", "net_profit"}
+RED_BG_ROWS = {"marginal", "gross_profit", "op_profit", "net_profit",
+               "revenue", "cogs"}
 BOLD_ROWS   = {"total_manuf"}
+# Qizil kategoriya qatoriga aylangan data qatorlar (oq bold matn)
+CATEGORY_ROWS = {"revenue", "cogs"}
 
-# 6 yangi metrik qator (tepada)
+# 7 yangi metrik qator (tepada)
 # 4-element: qator uslubi — "red" (total ko'rinishi) yoki "zebra" (oddiy)
+# prod_volume — "Объём производства" kategoriya qatori: ostidagi 3 qator yig'indisi
 EXTRA_ROWS = [
     ("units_sold",         "Количество продаж",                   "plain", "red"),
     ("instagram_sold",     "Инстаграм продаж",                    "plain", "zebra"),
     ("b2b_sold",           "B2B продаж",                          "plain", "zebra"),
+    ("prod_volume",        "Объём производства",                  "num",   "red"),
     ("units_produced",     "Количество произведённых изделий",    "plain", "zebra"),
     ("production_cost",    "Сумма производства",                  "num",   "zebra"),
     ("production_workers", "Количество производственных рабочих", "plain", "zebra"),
@@ -115,7 +129,6 @@ def _parse_col(ck):
 
 
 ROW_MAP = {
-    70:  ("revenue_mult",  "plain"),
     82:  ("revenue",       "num"),
     109: ("cogs",          "num"),
     120: ("loss_adj",      "num"),
@@ -235,7 +248,6 @@ def _derive(data, n):
         "net_pct":      pct(net_profit, rev),
         "s_balansa":    net_profit,
         "raznitsa":     [0.0]*n,
-        "revenue_mult": [0.0]*n,
     }
 
 
@@ -264,6 +276,10 @@ def _adj_bottom(top_key, bottom):
     b = bottom
     if top_key >= TOP_INSERT_AFTER_TOP:
         b += TOP_INSERT_PT          # tepaga joy → pastga sur
+    if top_key >= REVHDR_REMOVE_AFTER:
+        b -= HDR_ROW_PT             # Выручка sarlavhasi o'chirildi → yuqoriga
+    if top_key >= COGSHDR_REMOVE_AFTER:
+        b -= HDR_ROW_PT             # Себестоимость sarlavhasi o'chirildi → yuqoriga
     if top_key >= REV_INSERT_AFTER_TOP:
         b += REV_INSERT_PT          # Выручка sub-qatorlari uchun joy
     if top_key >= COGS_INSERT_AFTER_TOP:
@@ -424,6 +440,16 @@ def generate(data: dict,
         if dkey not in full:
             full[dkey] = [0] * n_cols
 
+    # "Объём производства" — ostidagi 3 qator yig'indisi (oyma-oy)
+    def _v(key, i):
+        vals = full.get(key) or []
+        return float(vals[i] or 0) if i < len(vals) else 0.0
+
+    full["prod_volume"] = [
+        _v("units_produced", i) + _v("production_cost", i) + _v("production_workers", i)
+        for i in range(n_cols)
+    ]
+
     cv = new_canvas(output)
 
     with pdfplumber.open(template) as pdf:
@@ -447,6 +473,12 @@ def generate(data: dict,
             if any(abs(r_top - mt) <= GAP_RECT_TOL for mt in MOVE_REMOVE_RECT_TOPS):
                 continue
 
+            # Выручка/Себестоимость sarlavha bandlari — skip
+            # (x0>30: chap chetdagi oq sidebar rectlariga tegmaymiz)
+            if r.get("x0", 0) > 30 and any(
+                    abs(r_top - ht) <= GAP_RECT_TOL for ht in HDR_REMOVE_RECT_TOPS):
+                continue
+
             r_bottom = _adj_bottom(r_top, r["bottom"])
 
             if _is_red_rect(clr):
@@ -461,6 +493,13 @@ def generate(data: dict,
         cv.rect(31.4, rl_y(_adj_bottom(STOYANKA_BAND_TOP, STOYANKA_BAND_TOP + 11.6)),
                 782.8, 11.6, stroke=0, fill=1)
 
+        # Выручка/Себестоимость data qatorlari — endi qizil kategoriya bandlari
+        cv.setFillColor(Color(0.85, 0.11, 0.11))
+        cv.rect(31.4, rl_y(_adj_bottom(REV_BAND_TOP, REV_BAND_TOP + NEW_ROW_H)),
+                782.8, NEW_ROW_H, stroke=0, fill=1)
+        cv.rect(31.4, rl_y(_adj_bottom(COGS_BAND_TOP, COGS_BAND_TOP + NEW_ROW_H)),
+                782.8, NEW_ROW_H, stroke=0, fill=1)
+
         rows = defaultdict(list)
         for ch in page.chars:
             rows[round(ch["top"])].append(ch)
@@ -473,7 +512,7 @@ def generate(data: dict,
 
         for top_key in sorted(rows.keys()):
 
-            if top_key in SKIP_TOPS:
+            if top_key in SKIP_TOPS or top_key in HDR_SKIP_CHAR_TOPS:
                 continue
 
             chars    = rows[top_key]
@@ -499,6 +538,9 @@ def generate(data: dict,
             is_bold_row = (best_dist <= 6 and best_key is not None and
                            ROW_MAP.get(best_key, ("",))[0] in BOLD_ROWS)
 
+            is_cat_row  = (best_dist <= 6 and best_key is not None and
+                           ROW_MAP.get(best_key, ("",))[0] in CATEGORY_ROWS)
+
             # Kommerciyaga ko'chirilgan qatorlar — template joyidan chizilmaydi
             if (best_dist <= 6 and best_key is not None and
                     ROW_MAP.get(best_key, ("",))[0] in MOVED_TO_COMMER):
@@ -509,9 +551,12 @@ def generate(data: dict,
                 txt = ch.get("text","")
                 if not txt.strip() or ch["x0"] >= LABEL_CUTOFF: continue
                 raw_font = resolve_font(ch.get("fontname",""))
-                font = _bold_font(raw_font) if is_bold_row else raw_font
+                font = _bold_font(raw_font) if (is_bold_row or is_cat_row) else raw_font
                 cv.setFont(font, ch.get("size",6.88))
-                cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
+                if is_cat_row:
+                    cv.setFillColor(C_WHITE)
+                else:
+                    cv.setFillColor(to_color(ch.get("non_stroking_color",(0,0,0))))
                 cv.drawString(ch["x0"], rl_y(_adj_bottom(top_key, ch["bottom"])), txt)
 
             if best_dist <= 6 and best_key is not None:
@@ -528,6 +573,8 @@ def generate(data: dict,
 
                 if data_key in BOLD_ROWS:
                     font = _bold_font(font)
+                if data_key in CATEGORY_ROWS:
+                    font, base_clr = _bold_font(font), C_WHITE
                 if data_key == "raznitsa":
                     base_clr, font = C_RED, "Rubik-Bold"
 
@@ -543,16 +590,8 @@ def generate(data: dict,
                 for i, cx in enumerate(col_x):
                     v = values[i] if i < len(values) else 0.0
 
-                    # loss_adj — FAQAT ko'rsatishda belgini teskari qilamiz
-                    # (hisob-kitob, _derive marginal o'zgarmaydi).
-                    # Rang ko'rsatilgan (teskari) qiymatga qarab: manfiy→qizil, musbat→qora.
-                    if data_key == "loss_adj":
-                        disp = -v
-                        txt  = _fmt(disp, fmt_style)
-                        clr  = C_RED if (isinstance(disp,(int,float)) and disp < 0) else C_BLACK
-                    else:
-                        txt = _fmt(v, fmt_style)
-                        clr = _value_color(v, data_key, base_clr)
+                    txt = _fmt(v, fmt_style)
+                    clr = _value_color(v, data_key, base_clr)
 
                     cv.setFont(font, size); cv.setFillColor(clr)
                     cv.drawRightString(cx, by, txt)
