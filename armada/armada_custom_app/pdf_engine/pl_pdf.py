@@ -435,7 +435,9 @@ def _draw_moved_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_col
 def _draw_new_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
     """Инстаграм(5238 group) + Таргет(5239 leaf) — Kommerciya bo'limida,
     ko'chirilgan 3 qatordan (Скидка/Бонус/Яндекс инстаграм) keyin.
-    Oq fon (zebra yo'q), group indent 33.5, leaf indent NEW_COMMER_INDENT_X."""
+    Инстаграм (5238 group) — qizil kategoriya qatori (oq qalin matn, qizil fon).
+    Таргет (5239 leaf) — oddiy oq fon, NEW_COMMER_INDENT_X indent."""
+    C_RED_BG   = Color(0.85, 0.11, 0.11)   # template kategoriya qatorlari bilan bir xil
     chars_741  = [ch for ch in page.chars
                   if round(ch["top"]) == 741 and ch.get("text","").strip()]
     raw_bottom = chars_741[0]["bottom"] if chars_741 else 748.0
@@ -444,16 +446,32 @@ def _draw_new_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color
 
     for idx, (dkey, label, indent) in enumerate(NEW_COMMER_ROWS):
         # 3 ko'chirilgan qatordan keyin: +4, +5 ...
-        by     = rl_y(base_by + MOVE_ROW_PT * (n_moved + idx + 1))
-        values = full.get(dkey) or [0.0] * n_cols
-        label_x = NEW_COMMER_INDENT_X if indent else 33.5
+        text_bottom = base_by + MOVE_ROW_PT * (n_moved + idx + 1)
+        by          = rl_y(text_bottom)
+        values      = full.get(dkey) or [0.0] * n_cols
+        label_x     = NEW_COMMER_INDENT_X if indent else 33.5
 
-        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        is_red = (dkey == "instagram_exp")   # 5238 group — qizil kategoriya qatori
+
+        if is_red:
+            # Qizil fon band (jadval kengligida) — _draw_extra_rows_top geometriyasi:
+            # matn tayanchi band tepasidan 7.0, band tubidan 4.6pt
+            cv.setFillColor(C_RED_BG)
+            cv.rect(31.4, rl_y(text_bottom + 4.6), 782.8, MOVE_ROW_PT, stroke=0, fill=1)
+            row_font, row_clr = _bold_font(std_font), C_WHITE
+        else:
+            row_font, row_clr = std_font, std_color
+
+        cv.setFont(row_font, std_size); cv.setFillColor(row_clr)
         cv.drawString(label_x, by, label)
         for i, cx in enumerate(col_x):
-            v   = values[i] if i < len(values) else 0.0
-            clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
-            cv.setFont(std_font, std_size); cv.setFillColor(clr)
+            v = values[i] if i < len(values) else 0.0
+            if is_red:
+                # qizil fonda: manfiy → qora (o'qilishi uchun), musbat → oq
+                clr = C_BLACK if (isinstance(v, (int, float)) and v < 0) else C_WHITE
+            else:
+                clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
+            cv.setFont(row_font, std_size); cv.setFillColor(clr)
             cv.drawRightString(cx, by, _fmt(v, "num"))
 
 
