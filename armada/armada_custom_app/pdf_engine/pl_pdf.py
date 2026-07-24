@@ -214,7 +214,10 @@ def _derive(data, n):
            "prazdnik","obuchenie","remont","fin_uslugi",
            "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka",
            "programma"]
-    com = ["arenda_reklam","khairiya","reklama","skidka","bonus","yandex_inst"]
+    # instagram_exp — 5238 group (bolalari yig'indisi); target(5239) alohida
+    # QO'SHILMAYDI, aks holda ikki marta sanaladi.
+    com = ["arenda_reklam","khairiya","reklama","skidka","bonus","yandex_inst",
+           "instagram_exp"]
 
     def vsum(*keys):
         r = [0.0]*n

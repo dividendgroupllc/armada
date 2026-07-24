@@ -49,6 +49,8 @@ ACCOUNT_KEY_MAP = {
     # Commercial
     "5218 - Реклама и маркетинг": "reklama",
     "5226 - Хайрия эхсон": "khairiya",
+    "5238 - Инстаграм": "instagram_exp",   # group (52003 Kommerciya ostida)
+    "5239 - Таргет": "target",             # leaf (5238 Инстаграм ichida)
     # Tax
     "5232 - Налог на прибыль": "nalog_prib",
     # CHANGE 2: Кредит va Алименты o'chirilgan (CoA dan)
