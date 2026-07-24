@@ -85,8 +85,16 @@ MOVE_REMOVE_RECT_TOPS = [565.7, 576.9, 654.6, 665.7, 676.8]
 STOYANKA_BAND_TOP = 665.7   # gray qilib qayta chiziladigan band
 MOVE_UP_AFTER_1   = 585.0   # Скидка+Бонус o'rni: pastdagilar -23.2
 MOVE_UP_AFTER_2   = 663.0   # Яндекс инстаграм o'rni: yana -11.6
-MOVE_DOWN_AFTER   = 748.0   # Реклама dan keyin 3 qator: +34.8
+MOVE_DOWN_AFTER   = 748.0   # Реклама dan keyin qatorlar (3 ko'chirilgan +
+                            # Инстаграм/Таргет = 5 qator): +58.0
 MOVE_ROW_PT       = 11.6
+MOVE_DOWN_ROWS    = 5       # Реклама dan keyingi yangi qatorlar soni
+
+# ── Инстаграм(5238 group)/Таргет(5239 leaf) — Kommerciya, ko'chirilgan
+#    3 qatordan (Скидка/Бонус/Яндекс инстаграм) keyin chiziladi ──
+NEW_COMMER_ROWS = [("instagram_exp", "Инстаграм", 0),   # group sarlavha
+                   ("target",        "Таргет",    1)]   # leaf (indent)
+NEW_COMMER_INDENT_X = 40.0  # leaf uchun chekinish (group 33.5 da)
 
 # ── Кредит/Алименты GAP yopish (v6 dan) ──
 GAP_REMOVE_RECT_TOPS = [421.4, 432.5]
@@ -296,7 +304,7 @@ def _adj_bottom(top_key, bottom):
     if top_key > MOVE_UP_AFTER_2:
         b -= MOVE_ROW_PT            # Яндекс инстаграм ko'chirildi → yuqoriga
     if top_key >= MOVE_DOWN_AFTER:
-        b += 3 * MOVE_ROW_PT        # Kommerciyada 3 yangi qator → pastga
+        b += MOVE_DOWN_ROWS * MOVE_ROW_PT   # Kommerciyada 5 yangi qator → pastga
     return b
 
 
@@ -424,6 +432,31 @@ def _draw_moved_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_col
             cv.drawRightString(cx, by, _fmt(v, "num"))
 
 
+def _draw_new_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
+    """Инстаграм(5238 group) + Таргет(5239 leaf) — Kommerciya bo'limida,
+    ko'chirilgan 3 qatordan (Скидка/Бонус/Яндекс инстаграм) keyin.
+    Oq fon (zebra yo'q), group indent 33.5, leaf indent NEW_COMMER_INDENT_X."""
+    chars_741  = [ch for ch in page.chars
+                  if round(ch["top"]) == 741 and ch.get("text","").strip()]
+    raw_bottom = chars_741[0]["bottom"] if chars_741 else 748.0
+    base_by    = _adj_bottom(741, raw_bottom)      # Реклама qatorining final bottom'i
+    n_moved    = len(MOVED_COMMER_ROWS)            # ko'chirilgan qatorlar (3)
+
+    for idx, (dkey, label, indent) in enumerate(NEW_COMMER_ROWS):
+        # 3 ko'chirilgan qatordan keyin: +4, +5 ...
+        by     = rl_y(base_by + MOVE_ROW_PT * (n_moved + idx + 1))
+        values = full.get(dkey) or [0.0] * n_cols
+        label_x = NEW_COMMER_INDENT_X if indent else 33.5
+
+        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        cv.drawString(label_x, by, label)
+        for i, cx in enumerate(col_x):
+            v   = values[i] if i < len(values) else 0.0
+            clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
+            cv.setFont(std_font, std_size); cv.setFillColor(clr)
+            cv.drawRightString(cx, by, _fmt(v, "num"))
+
+
 def generate(data: dict,
              output_filename: str = "pl_report.pdf",
              col_keys: list = None) -> str:
@@ -439,6 +472,7 @@ def generate(data: dict,
     for dkey in ["units_sold","instagram_sold","b2b_sold",
                  "instagram_revenue","b2b_revenue",
                  "instagram_cogs","b2b_cogs","programma",
+                 "instagram_exp","target",
                  "units_produced","production_cost","production_workers"]:
         if dkey not in full:
             full[dkey] = [0] * n_cols
@@ -629,6 +663,10 @@ def generate(data: dict,
         # ── Скидка/Бонус/Яндекс инстаграм — Kommerciya bo'limida ──
         _draw_moved_commer_rows(cv, full, col_x, n_cols,
                                 std_font, std_size, std_color, page)
+
+        # ── Инстаграм/Таргет — ko'chirilgan qatorlardan keyin ──
+        _draw_new_commer_rows(cv, full, col_x, n_cols,
+                              std_font, std_size, std_color, page)
 
     cv.save()
     return output
