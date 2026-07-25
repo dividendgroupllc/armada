@@ -71,13 +71,15 @@ COGS_SPLIT_ROWS = [
 PROG_INSERT_AFTER_TOP = 675.0
 PROG_INSERT_PT        = 11.6
 
-# ── Скидка/Бонус/Яндекс инстаграм: Admin → Kommerciya (root account o'zgargan) ──
-# Template'da admin bo'limida turgan bu 3 qator endi Kommerciya bo'limida,
+# ── Скидка/Бонус: Admin → Kommerciya (root account o'zgargan) ──
+# Template'da admin bo'limida turgan Скидка/Бонус endi Kommerciya bo'limida,
 # Реклама и маркетинг (741) dan keyin chiziladi.
+# Яндекс инстаграм (yandex_inst, 5236) ham template joyidan (659) OLINADI, lekin
+# endi Kommerciya'da alohida emas — 5238 Инстаграм group ichida leaf sifatida
+# chiziladi (NEW_COMMER_ROWS, reparent bilan mos).
 MOVED_TO_COMMER   = {"skidka", "bonus", "yandex_inst"}
 MOVED_COMMER_ROWS = [("skidka",      "Скидка"),
-                     ("bonus",       "Бонус сотрудникам"),
-                     ("yandex_inst", "Яндекс инстаграм")]
+                     ("bonus",       "Бонус сотрудникам")]
 # Olib tashlanadigan zebra fonlar: Скидка(565.7), Бонус(576.9),
 # Яндекс инст(654.6) + almashinish buzilmasligi uchun Стоянка(665.7) va
 # blank(676.8) ham olib tashlanadi (Стоянка gray qilib qayta chiziladi).
@@ -85,15 +87,21 @@ MOVE_REMOVE_RECT_TOPS = [565.7, 576.9, 654.6, 665.7, 676.8]
 STOYANKA_BAND_TOP = 665.7   # gray qilib qayta chiziladigan band
 MOVE_UP_AFTER_1   = 585.0   # Скидка+Бонус o'rni: pastdagilar -23.2
 MOVE_UP_AFTER_2   = 663.0   # Яндекс инстаграм o'rni: yana -11.6
-MOVE_DOWN_AFTER   = 748.0   # Реклама dan keyin qatorlar (3 ko'chirilgan +
-                            # Инстаграм/Таргет = 5 qator): +58.0
+MOVE_DOWN_AFTER   = 748.0   # Реклама dan keyin qatorlar (2 ko'chirilgan Скидка/Бонус
+                            # + Инстаграм group + 4 leaf = 7 qator): +81.2
 MOVE_ROW_PT       = 11.6
-MOVE_DOWN_ROWS    = 5       # Реклама dan keyingi yangi qatorlar soni
+MOVE_DOWN_ROWS    = 7       # Реклама dan keyingi yangi qatorlar soni
 
-# ── Инстаграм(5238 group)/Таргет(5239 leaf) — Kommerciya, ko'chirilgan
-#    3 qatordan (Скидка/Бонус/Яндекс инстаграм) keyin chiziladi ──
-NEW_COMMER_ROWS = [("instagram_exp", "Инстаграм", 0),   # group sarlavha
-                   ("target",        "Таргет",    1)]   # leaf (indent)
+# ── Инстаграм(5238 group) va uning leaf'lari — Kommerciya, ko'chirilgan
+#    Скидка/Бонус dan keyin chiziladi ──
+#    Инстаграм = qizil group sarlavha; ostida 4 leaf:
+#      Таргет(5239), Яндекс инстаграм(5236, reparent), Таргетолог, Маркетолог.
+#    instagram_group qiymati = shu 4 leaf yig'indisi (_derive'da hisoblanadi).
+NEW_COMMER_ROWS = [("instagram_group", "Инстаграм",          0),   # group sarlavha
+                   ("target",          "Таргет",             1),   # 5239 leaf
+                   ("yandex_inst",     "Яндекс инстаграм",   1),   # 5236 leaf
+                   ("target_salary",   "Таргетолог",         1),   # oylik leaf
+                   ("market_salary",   "Маркетолог",         1)]   # oylik leaf
 NEW_COMMER_INDENT_X = 40.0  # leaf uchun chekinish (group 33.5 da)
 
 # ── Кредит/Алименты GAP yopish (v6 dan) ──
@@ -222,10 +230,12 @@ def _derive(data, n):
            "prazdnik","obuchenie","remont","fin_uslugi",
            "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka",
            "programma"]
-    # instagram_exp — 5238 group (bolalari yig'indisi); target(5239) alohida
-    # QO'SHILMAYDI, aks holda ikki marta sanaladi.
-    com = ["arenda_reklam","khairiya","reklama","skidka","bonus","yandex_inst",
-           "instagram_exp"]
+    # Инстаграм group (5238) — ko'rinadigan 4 leaf yig'indisi:
+    #   target(5239) + yandex_inst(5236, reparent) + target_salary + market_salary.
+    # yandex_inst endi com da ALOHIDA emas — instagram_group ichida.
+    # reklama (5218) allaqachon target/market oyliklaridan tozalangan (API da),
+    # shuning uchun bu yerda double-count bo'lmaydi.
+    com = ["arenda_reklam","khairiya","reklama","skidka","bonus"]
 
     def vsum(*keys):
         r = [0.0]*n
@@ -233,11 +243,12 @@ def _derive(data, n):
             for i, v in enumerate(g(k)): r[i] += v
         return r
 
+    ig_group    = vsum("target", "yandex_inst", "target_salary", "market_salary")
     marginal    = [rev[i]-cogs[i]-ladj[i] for i in range(n)]
     total_manuf = vsum(*mfg)
     gross       = [marginal[i]+other[i]-total_manuf[i] for i in range(n)]
     total_admin = vsum(*adm)
-    total_comm  = vsum(*com)
+    total_comm  = [vsum(*com)[i] + ig_group[i] for i in range(n)]
     op_profit   = [gross[i]-total_admin[i]-total_comm[i] for i in range(n)]
     nalog       = g("nalog_prib")
     net_profit  = [op_profit[i]-nalog[i] for i in range(n)]
@@ -253,6 +264,7 @@ def _derive(data, n):
         "gross_pct":    pct(gross, rev),
         "total_admin":  total_admin,
         "total_commer": total_comm,
+        "instagram_group": ig_group,
         "op_profit":    op_profit,
         "op_pct":       pct(op_profit, rev),
         "net_profit":   net_profit,
@@ -433,25 +445,26 @@ def _draw_moved_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_col
 
 
 def _draw_new_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
-    """Инстаграм(5238 group) + Таргет(5239 leaf) — Kommerciya bo'limida,
-    ko'chirilgan 3 qatordan (Скидка/Бонус/Яндекс инстаграм) keyin.
+    """Инстаграм(5238 group) + uning leaf'lari — Kommerciya bo'limida,
+    ko'chirilgan Скидка/Бонус dan keyin.
     Инстаграм (5238 group) — qizil kategoriya qatori (oq qalin matn, qizil fon).
-    Таргет (5239 leaf) — oddiy oq fon, NEW_COMMER_INDENT_X indent."""
+    Leaf'lar (Таргет, Яндекс инстаграм, Таргетолог, Маркетолог) — oq fon,
+    NEW_COMMER_INDENT_X indent."""
     C_RED_BG   = Color(0.85, 0.11, 0.11)   # template kategoriya qatorlari bilan bir xil
     chars_741  = [ch for ch in page.chars
                   if round(ch["top"]) == 741 and ch.get("text","").strip()]
     raw_bottom = chars_741[0]["bottom"] if chars_741 else 748.0
     base_by    = _adj_bottom(741, raw_bottom)      # Реклама qatorining final bottom'i
-    n_moved    = len(MOVED_COMMER_ROWS)            # ko'chirilgan qatorlar (3)
+    n_moved    = len(MOVED_COMMER_ROWS)            # ko'chirilgan qatorlar (Скидка/Бонус = 2)
 
     for idx, (dkey, label, indent) in enumerate(NEW_COMMER_ROWS):
-        # 3 ko'chirilgan qatordan keyin: +4, +5 ...
+        # 2 ko'chirilgan qatordan keyin: +3, +4, +5 ...
         text_bottom = base_by + MOVE_ROW_PT * (n_moved + idx + 1)
         by          = rl_y(text_bottom)
         values      = full.get(dkey) or [0.0] * n_cols
         label_x     = NEW_COMMER_INDENT_X if indent else 33.5
 
-        is_red = (dkey == "instagram_exp")   # 5238 group — qizil kategoriya qatori
+        is_red = (dkey == "instagram_group")   # 5238 group — qizil kategoriya qatori
 
         if is_red:
             # Qizil fon band (jadval kengligida) — _draw_extra_rows_top geometriyasi:
@@ -490,7 +503,8 @@ def generate(data: dict,
     for dkey in ["units_sold","instagram_sold","b2b_sold",
                  "instagram_revenue","b2b_revenue",
                  "instagram_cogs","b2b_cogs","programma",
-                 "instagram_exp","target",
+                 "instagram_exp","target","yandex_inst",
+                 "target_salary","market_salary",
                  "units_produced","production_cost","production_workers"]:
         if dkey not in full:
             full[dkey] = [0] * n_cols

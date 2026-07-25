@@ -42,7 +42,7 @@ ACCOUNT_KEY_MAP = {
     "5224 - Финансовые услуги": "fin_uslugi",
     "5225 - Офис": "ofis",
     "5227 - Яндекс": "yandex",
-    "5236 - Яндекс инстаграм": "yandex_inst",   # CHANGE 3: yangi account
+    "5236 - Яндекс инстаграм": "yandex_inst",   # endi 5238 Инстаграм group ichida (reparent)
     "5233 - Услуги": "uslugi",
     "5234 - Канцтовар": "kantc",
     "5237 - Программа": "programma",
@@ -293,6 +293,72 @@ def _get_production_workers(col_keys, company):
     return [len(month_emps.get(ck, set())) for ck in col_keys]
 
 
+# 5218 Реклама и маркетинг — targetolog/marketolog oyliklari shu akkountga
+# debet qilinadi (2120 Payroll Payable orqali EMAS; cashdan to'g'ridan-to'g'ri).
+ROLE_SALARY_ACCOUNT = "5218 - Реклама и маркетинг - AM"
+
+
+def _get_role_salaries(col_keys, company):
+    """Targetolog/Marketolog oylik (nachisleniya) — oyma-oy.
+
+    Manba: Journal Entry.user_remark. Real datada bu maoshlar 2120 Payroll
+    Payable orqali emas, balki 5218 «Реклама и маркетинг» ga debet qilinadi
+    (naqd puldan) va faqat JE izohi bilan taniladi. Har bir JE ning 5218
+    debeti tegishli oyga qo'shiladi.
+
+    Rol JE izohidan aniqlanadi (LOWER):
+      - 'таргетолог' bor, 'маркетолог' yo'q  → target
+      - 'маркетолог' bor, 'таргетолог' yo'q  → market
+      - ikkalasi ham bor (birlashtirilgan JE) → 50/50 bo'linadi (jami saqlanadi)
+    'таргет ёкиш' / 'Таргетга' (reklama xarajati) izohida 'олог' bo'lmagani
+    uchun kirmaydi — u alohida reklama xarajati.
+
+    Qaytaradi: (target_vals, market_vals, total_vals) — col_keys tartibida.
+    total = har oy bo'yicha ikkala rolning yig'indisi (reklama'dan ayirish uchun).
+    """
+    tgt   = {ck: 0.0 for ck in col_keys}
+    mkt   = {ck: 0.0 for ck in col_keys}
+    total = {ck: 0.0 for ck in col_keys}
+
+    rows = frappe.db.sql("""
+        SELECT
+            LOWER(DATE_FORMAT(je.posting_date, '%%b')) AS mon,
+            YEAR(je.posting_date)                      AS yr,
+            je.user_remark                             AS remark,
+            SUM(jea.debit)                             AS amt
+        FROM `tabJournal Entry` je
+        JOIN `tabJournal Entry Account` jea ON jea.parent = je.name
+        WHERE je.docstatus = 1
+          AND je.company   = %(company)s
+          AND jea.debit    > 0
+          AND jea.account  = %(acct)s
+          AND (je.user_remark LIKE '%%аргетолог%%'
+               OR je.user_remark LIKE '%%аркетолог%%')
+        GROUP BY je.name
+    """, {"company": company, "acct": ROLE_SALARY_ACCOUNT}, as_dict=True)
+
+    for r in rows:
+        ck = f"{r.mon}_{r.yr}"
+        if ck not in total:
+            continue
+        amt  = float(r.amt or 0)
+        rem  = (r.remark or "").lower()
+        is_t = "аргетолог" in rem
+        is_m = "аркетолог" in rem
+        total[ck] += amt
+        if is_t and is_m:
+            tgt[ck] += amt / 2.0
+            mkt[ck] += amt / 2.0
+        elif is_t:
+            tgt[ck] += amt
+        elif is_m:
+            mkt[ck] += amt
+
+    return ([tgt[ck]   for ck in col_keys],
+            [mkt[ck]   for ck in col_keys],
+            [total[ck] for ck in col_keys])
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
@@ -365,6 +431,16 @@ def generate_pl_pdf(filters):
     data["units_produced"]     = _get_units_produced(col_keys, company)
     data["production_cost"]    = _get_production_cost(col_keys, company)
     data["production_workers"] = _get_production_workers(col_keys, company)
+
+    # ── Targetolog/Marketolog oyliklari (Инстаграм group ostida) ──
+    # Manba: JE izohi (5218 debet). Ular 5218 «Реклама и маркетинг» ichida
+    # bo'lgani uchun, double-count bo'lmasligi uchun reklama qatoridan ayiramiz
+    # (jami: instagram_group ichida qayta hisoblanadi — Kommerciya jami o'zgarmaydi).
+    tgt_sal, mkt_sal, role_total = _get_role_salaries(col_keys, company)
+    data["target_salary"] = tgt_sal
+    data["market_salary"] = mkt_sal
+    _rek = data.get("reklama") or [0.0] * len(col_keys)
+    data["reklama"] = [_rek[i] - role_total[i] for i in range(len(col_keys))]
 
     # PDF yaratish
     from armada.armada_custom_app.pdf_engine.pl_pdf import generate
