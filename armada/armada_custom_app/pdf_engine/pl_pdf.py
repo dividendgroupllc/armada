@@ -233,8 +233,9 @@ def _derive(data, n):
     # Инстаграм group (5238) — ko'rinadigan 4 leaf yig'indisi:
     #   target(5239) + yandex_inst(5236, reparent) + target_salary + market_salary.
     # yandex_inst endi com da ALOHIDA emas — instagram_group ichida.
-    # reklama (5218) allaqachon target/market oyliklaridan tozalangan (API da),
-    # shuning uchun bu yerda double-count bo'lmaydi.
+    # target_salary/market_salary manbasi 2120 Payroll Payable (balans akkaunti,
+    # P&L reklama qatorida EMAS) — shuning uchun ular reklama'ga qo'shimcha
+    # xarajat sifatida kommersiya jamiga qo'shiladi (double-count yo'q).
     com = ["arenda_reklam","khairiya","reklama","skidka","bonus"]
 
     def vsum(*keys):
