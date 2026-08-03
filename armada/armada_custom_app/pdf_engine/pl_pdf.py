@@ -67,6 +67,23 @@ COGS_SPLIT_ROWS = [
     ("b2b_cogs",       "B2B себестоимость",       "num"),
 ]
 
+# ── Средняя выручка / себестоимость bloki ──
+# Сырьевая себестоимость (109 + 2 sub-qator) va Маржинальная прыбиль (136)
+# ORASIGA qo'yiladi: Убыток (120) qatoridan keyin 5 qator:
+#   1 qizil kategoriya sarlavha + 4 o'rtacha qator.
+# O'rtacha = summa / sotilgan dona (Инстаграм va B2B alohida).
+AVG_INSERT_AFTER_TOP = 128.0    # Убыток (120) dan keyingi hamma narsa pastga
+AVG_INSERT_PT        = 58.0     # 5 qator × 11.6
+AVG_ANCHOR_TOP       = 120      # Убыток qatori — tayanch
+AVG_BAND_TOP         = 117.23   # Убыток qatorining template'dagi fon top'i
+AVG_HDR_LABEL        = "Средняя выручка и средняя себестоимость"
+AVG_ROWS = [
+    ("avg_revenue_instagram", "Средняя выручка Инстаграм",      "num2"),
+    ("avg_revenue_b2b",       "Средняя выручка B2B",            "num2"),
+    ("avg_cogs_instagram",    "Средняя себестоимость Инстаграм", "num2"),
+    ("avg_cogs_b2b",          "Средняя себестоимость B2B",       "num2"),
+]
+
 # ── Программа (5237) — admin oxirida, Стоянка (670) dan keyin ──
 PROG_INSERT_AFTER_TOP = 675.0
 PROG_INSERT_PT        = 11.6
@@ -88,20 +105,25 @@ STOYANKA_BAND_TOP = 665.7   # gray qilib qayta chiziladigan band
 MOVE_UP_AFTER_1   = 585.0   # Скидка+Бонус o'rni: pastdagilar -23.2
 MOVE_UP_AFTER_2   = 663.0   # Яндекс инстаграм o'rni: yana -11.6
 MOVE_DOWN_AFTER   = 748.0   # Реклама dan keyin qatorlar (2 ko'chirilgan Скидка/Бонус
-                            # + Инстаграм group + 4 leaf = 7 qator): +81.2
+                            # + Инстаграм group + 5 leaf = 8 qator): +92.8
 MOVE_ROW_PT       = 11.6
-MOVE_DOWN_ROWS    = 7       # Реклама dan keyingi yangi qatorlar soni
+MOVE_DOWN_ROWS    = 8       # Реклама dan keyingi yangi qatorlar soni
 
 # ── Инстаграм(5238 group) va uning leaf'lari — Kommerciya, ko'chirilgan
 #    Скидка/Бонус dan keyin chiziladi ──
-#    Инстаграм = qizil group sarlavha; ostida 4 leaf:
-#      Таргет(5239), Яндекс инстаграм(5236, reparent), Таргетолог, Маркетолог.
-#    instagram_group qiymati = shu 4 leaf yig'indisi (_derive'da hisoblanadi).
-NEW_COMMER_ROWS = [("instagram_group", "Инстаграм",          0),   # group sarlavha
-                   ("target",          "Таргет",             1),   # 5239 leaf
-                   ("yandex_inst",     "Яндекс инстаграм",   1),   # 5236 leaf
-                   ("target_salary",   "Таргетолог",         1),   # oylik leaf
-                   ("market_salary",   "Маркетолог",         1)]   # oylik leaf
+#    Инстаграм = qizil group sarlavha; ostida 5 leaf:
+#      Таргет(5239), Яндекс инстаграм(5236, reparent), Таргетолог, Маркетолог
+#      va «Расход на 1 продажу» (hisoblanuvchi ko'rsatkich).
+#    instagram_group qiymati = birinchi 4 leaf yig'indisi (_derive'da hisoblanadi);
+#    oxirgi leaf — nisbat (group / Инстаграм продаж), jamiga QO'SHILMAYDI.
+#    4-element — format uslubi ("num" butun, "num2" kasr bilan).
+NEW_COMMER_ROWS = [("instagram_group",       "Инстаграм",         0, "num"),
+                   ("target",                "Таргет",            1, "num"),
+                   ("yandex_inst",           "Яндекс инстаграм",  1, "num"),
+                   ("target_salary",         "Таргетолог",        1, "num"),
+                   ("market_salary",         "Маркетолог",        1, "num"),
+                   ("instagram_cost_per_sale",
+                    "Расход на 1 продажу",                        1, "num2")]
 NEW_COMMER_INDENT_X = 40.0  # leaf uchun chekinish (group 33.5 da)
 
 # ── Кредит/Алименты GAP yopish (v6 dan) ──
@@ -206,6 +228,10 @@ ROW_MAP = {
 
 
 def _fmt(v, style):
+    # num2 — kasr bilan (o'rtacha/nisbat qatorlari: yaxlitlash ma'noni buzadi)
+    if style == "num2":
+        fv = float(v) if isinstance(v, (int, float)) else 0.0
+        return f"{fv:,.2f}"
     rv = int(round(v)) if isinstance(v, (int, float)) else 0
     if style == "dollar":  return f"${rv:,}"
     if style == "pct":     return f"{rv}%"
@@ -308,6 +334,8 @@ def _adj_bottom(top_key, bottom):
         b += REV_INSERT_PT          # Выручка sub-qatorlari uchun joy
     if top_key >= COGS_INSERT_AFTER_TOP:
         b += COGS_INSERT_PT         # Себестоимость sub-qatorlari uchun joy
+    if top_key >= AVG_INSERT_AFTER_TOP:
+        b += AVG_INSERT_PT          # Средняя выручка/себестоимость bloki uchun joy
     if top_key > PROG_INSERT_AFTER_TOP:
         b += PROG_INSERT_PT         # Программа qatori uchun joy
     if top_key > GAP_SHIFT_AFTER_TOP:
@@ -407,6 +435,56 @@ def _draw_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color,
             cv.drawRightString(cx, by, _fmt(v, fstyle))
 
 
+def _draw_avg_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
+    """Средняя выручка / средняя себестоимость bloki — Убыток qatoridan keyin,
+    Маржинальная прыбиль dan oldin.
+
+    1-qator — qizil kategoriya sarlavhasi (Выручка/Сырьевая себестоимость
+    qatorlari kabi: qizil fon, oq qalin matn, raqamsiz).
+    Ostidagi 4 qator — Инстаграм/B2B kesimida o'rtacha qiymatlar
+    (gray/white zebra)."""
+    C_GRAY   = Color(0.9529412, 0.9529412, 0.9529412)
+    C_RED_BG = Color(0.85, 0.11, 0.11)
+
+    chars      = [ch for ch in page.chars
+                  if round(ch["top"]) == AVG_ANCHOR_TOP and ch.get("text","").strip()]
+    raw_bottom = chars[0]["bottom"] if chars else AVG_ANCHOR_TOP + 7.0
+    base_by    = _adj_bottom(AVG_ANCHOR_TOP, raw_bottom)          # Убыток baseline
+    fin_band   = AVG_BAND_TOP + _adj_bottom(AVG_ANCHOR_TOP, 0.0)  # Убыток fon top'i
+
+    def _row(idx, label, values, fstyle, is_red):
+        off = NEW_ROW_H * (idx + 1)
+
+        if is_red:
+            bg, row_font, row_clr = C_RED_BG, _bold_font(std_font), C_WHITE
+        else:
+            bg = C_GRAY if idx % 2 == 1 else C_WHITE
+            row_font, row_clr = std_font, std_color
+
+        cv.setFillColor(bg)
+        cv.rect(31.4, rl_y(fin_band + off + NEW_ROW_H), 782.8, NEW_ROW_H,
+                stroke=0, fill=1)
+
+        by = rl_y(base_by + off)
+        cv.setFont(row_font, std_size); cv.setFillColor(row_clr)
+        cv.drawString(33.5, by, label)
+
+        if values is None:
+            return
+        for i, cx in enumerate(col_x):
+            v   = values[i] if i < len(values) else 0.0
+            clr = C_RED if (isinstance(v, (int, float)) and v < 0) else row_clr
+            cv.setFont(row_font, std_size); cv.setFillColor(clr)
+            cv.drawRightString(cx, by, _fmt(v, fstyle))
+
+    # Qizil sarlavha (raqamsiz)
+    _row(0, AVG_HDR_LABEL, None, "num", True)
+
+    # 4 o'rtacha qator
+    for idx, (dkey, label, fstyle) in enumerate(AVG_ROWS):
+        _row(idx + 1, label, full.get(dkey) or [0.0] * n_cols, fstyle, False)
+
+
 def _draw_programma_row(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
     """Программа (5237) — admin oxirida, Стоянка dan keyin (oq fon)."""
     chars_670  = [ch for ch in page.chars
@@ -458,7 +536,7 @@ def _draw_new_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color
     base_by    = _adj_bottom(741, raw_bottom)      # Реклама qatorining final bottom'i
     n_moved    = len(MOVED_COMMER_ROWS)            # ko'chirilgan qatorlar (Скидка/Бонус = 2)
 
-    for idx, (dkey, label, indent) in enumerate(NEW_COMMER_ROWS):
+    for idx, (dkey, label, indent, fstyle) in enumerate(NEW_COMMER_ROWS):
         # 2 ko'chirilgan qatordan keyin: +3, +4, +5 ...
         text_bottom = base_by + MOVE_ROW_PT * (n_moved + idx + 1)
         by          = rl_y(text_bottom)
@@ -486,7 +564,7 @@ def _draw_new_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color
             else:
                 clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
             cv.setFont(row_font, std_size); cv.setFillColor(clr)
-            cv.drawRightString(cx, by, _fmt(v, "num"))
+            cv.drawRightString(cx, by, _fmt(v, fstyle))
 
 
 def generate(data: dict,
@@ -519,6 +597,26 @@ def generate(data: dict,
         _v("units_produced", i) + _v("production_cost", i) + _v("production_workers", i)
         for i in range(n_cols)
     ]
+
+    # ── O'rtacha (средняя) qiymatlar: summa / sotilgan dona ──
+    # Sotuv soni 0 bo'lgan oyda 0 ko'rsatiladi (nolga bo'lish yo'q).
+    def _avg(amount_key, qty_key):
+        out = []
+        for i in range(n_cols):
+            qty = _v(qty_key, i)
+            out.append(_v(amount_key, i) / qty if qty else 0.0)
+        return out
+
+    full["avg_revenue_instagram"] = _avg("instagram_revenue", "instagram_sold")
+    full["avg_revenue_b2b"]       = _avg("b2b_revenue",       "b2b_sold")
+    full["avg_cogs_instagram"]    = _avg("instagram_cogs",    "instagram_sold")
+    full["avg_cogs_b2b"]          = _avg("b2b_cogs",          "b2b_sold")
+
+    # Инстаграм group ichidagi «Расход на 1 продажу»: Инстаграм bo'yicha
+    # umumiy kommersiya xarajati (Таргет + Яндекс инстаграм + Таргетолог +
+    # Маркетолог) / Инстаграм orqali sotilgan dona.
+    # Nisbat bo'lgani uchun instagram_group jamiga qo'shilmaydi.
+    full["instagram_cost_per_sale"] = _avg("instagram_group", "instagram_sold")
 
     cv = new_canvas(output)
 
@@ -688,6 +786,10 @@ def generate(data: dict,
         _draw_split_rows(cv, full, col_x, n_cols, std_font, std_size, std_color,
                          page, anchor_top=109, band_top=COGS_BAND_TOP,
                          split_rows=COGS_SPLIT_ROWS)
+
+        # ── Средняя выручка/себестоимость — Убыток dan keyin, Маржинальная dan oldin ──
+        _draw_avg_rows(cv, full, col_x, n_cols,
+                       std_font, std_size, std_color, page)
 
         # ── Программа — admin bo'limi oxirida ──
         _draw_programma_row(cv, full, col_x, n_cols,

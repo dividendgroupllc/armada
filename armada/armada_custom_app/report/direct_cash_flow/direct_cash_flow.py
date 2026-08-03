@@ -820,6 +820,134 @@ PDF_ACCRUAL_GROUPS = ("52001", "52002")
 # in activity subtotals and closing balance — only the row is not shown.
 PDF_HIDDEN_CATEGORIES = {"Налог на прибыль"}
 
+# ── «Клиент» qatori PDF'da ota qatorga aylanadi: ostida 2 ta child ──
+#    Инстаграм — party'si «Инстаграм...» bo'lgan mijozlar naqd harakati
+#    B2B       — «Клиент» kategoriyasining qolgan qismi (ota − Инстаграм),
+#                shu sababli ota = child'lar yig'indisi har doim mos tushadi.
+CLIENT_CATEGORY        = "Клиент"
+CLIENT_CHILD_INSTAGRAM = "Инстаграм"
+CLIENT_CHILD_B2B       = "B2B"
+INSTAGRAM_PARTY_PREFIX = "Инстаграм"
+
+
+def _client_instagram_values(filters, periods, account_map, cash_accounts):
+    """«Клиент» kategoriyasidagi naqd harakatning Инстаграм mijozlariga
+    tegishli qismi (davr kesimida).
+
+    Belgi (sign) mantig'i aggregate_movements bilan aynan bir xil:
+      PE → Receive '+' / Pay '−'
+      JE → kategoriya (account) is_inflow bayrog'i bo'yicha
+    """
+    client_accounts = [
+        acc for acc, info in account_map.items()
+        if str(info.get("category_name") or "").strip() == CLIENT_CATEGORY
+    ]
+    values = {p["key"]: 0.0 for p in periods}
+    if not client_accounts or not periods:
+        return values
+
+    params = {
+        "company":   filters.company,
+        "from_date": periods[0]["start"],
+        "to_date":   periods[-1]["end"],
+        "accounts":  client_accounts,
+        "like":      f"{INSTAGRAM_PARTY_PREFIX}%",
+    }
+
+    # ── Payment Entry (asosiy manba) ──
+    pe_rows = frappe.db.sql(
+        """
+        SELECT pe.posting_date, pe.payment_type, pe.base_paid_amount AS amount
+        FROM `tabPayment Entry` pe
+        WHERE
+            pe.docstatus   = 1
+            AND pe.company = %(company)s
+            AND pe.posting_date BETWEEN %(from_date)s AND %(to_date)s
+            AND pe.party_type = 'Customer'
+            AND pe.party LIKE %(like)s
+            AND (
+                (pe.payment_type = 'Receive' AND pe.paid_from IN %(accounts)s)
+                OR (pe.payment_type = 'Pay'  AND pe.paid_to   IN %(accounts)s)
+            )
+        """,
+        params,
+        as_dict=True,
+    )
+    for r in pe_rows:
+        pk = get_period_key(r.posting_date, periods)
+        if not pk:
+            continue
+        amt = flt(r.amount)
+        values[pk] += amt if r.payment_type == "Receive" else -amt
+
+    # ── Journal Entry (naqd hisobga tegadigan JE'larning mijoz satrlari) ──
+    if cash_accounts:
+        je_rows = frappe.db.sql(
+            """
+            SELECT
+                je.posting_date,
+                jea.account,
+                jea.debit_in_account_currency  AS dr,
+                jea.credit_in_account_currency AS cr
+            FROM `tabJournal Entry` je
+            INNER JOIN `tabJournal Entry Account` jea
+                ON jea.parent   = je.name
+                AND jea.account IN %(accounts)s
+            WHERE
+                je.docstatus   = 1
+                AND je.company = %(company)s
+                AND je.posting_date BETWEEN %(from_date)s AND %(to_date)s
+                AND jea.party_type = 'Customer'
+                AND jea.party LIKE %(like)s
+                AND je.name IN (
+                    SELECT DISTINCT parent
+                    FROM `tabJournal Entry Account`
+                    WHERE account IN %(cash_accounts)s
+                )
+            """,
+            dict(params, cash_accounts=cash_accounts),
+            as_dict=True,
+        )
+        for r in je_rows:
+            pk = get_period_key(r.posting_date, periods)
+            if not pk:
+                continue
+            amount = flt(r.dr) if flt(r.dr) > 0 else flt(r.cr)
+            inflow = cint((account_map.get(r.account) or {}).get("is_inflow", 1))
+            values[pk] += amount if inflow else -amount
+
+    return values
+
+
+def _split_client_row(rows, period_keys, ig_values):
+    """«Клиент» data qatoridan keyin Инстаграм va B2B child qatorlarini qo'yadi.
+    B2B = ota qator − Инстаграм, ya'ni ota qator qiymati o'zgarmaydi."""
+    out = []
+    for row in rows:
+        out.append(row)
+        if (row.get("row_type") != "data"
+                or str(row.get("label") or "").strip() != CLIENT_CATEGORY):
+            continue
+
+        def _child(label, getter):
+            child = {
+                "label":     label,
+                "indent":    1,
+                "row_type":  "data",
+                "is_inflow": cint(row.get("is_inflow", 1)),
+                "has_value": True,
+                "pdf_child": 1,
+            }
+            for k in period_keys:
+                child[k] = getter(k)
+            return child
+
+        out.append(_child(CLIENT_CHILD_INSTAGRAM,
+                          lambda k: flt(ig_values.get(k, 0))))
+        out.append(_child(CLIENT_CHILD_B2B,
+                          lambda k: flt(row.get(k, 0)) - flt(ig_values.get(k, 0))))
+    return out
+
 
 def _category_pnl_groups(account_map):
     """category_name → P&L group code ('52001'/'52002'/'52003'),
@@ -967,7 +1095,8 @@ def export_pdf(filters=None):
 
     # ── Collapse expense categories into P&L group rows ──────────────────
     period_keys = [c["fieldname"] for c in columns if c["fieldname"] != "label"]
-    cat_groups  = _category_pnl_groups(build_account_map())
+    account_map = build_account_map()
+    cat_groups  = _category_pnl_groups(account_map)
     data        = _group_pdf_rows(data, period_keys, cat_groups)
 
     # ── Guruh qatorlari — P&L reporti bilan bir xil (hisoblangan) ────────
@@ -989,6 +1118,12 @@ def export_pdf(filters=None):
         if not (r.get("row_type") == "data"
                 and str(r.get("label", "")).strip() in PDF_HIDDEN_CATEGORIES)
     ]
+
+    # ── «Клиент» → ota qator + 2 child (Инстаграм / B2B) ─────────────────
+    ig_values = _client_instagram_values(
+        filters, periods, account_map, get_cash_bank_accounts(filters.company)
+    )
+    data = _split_client_row(data, period_keys, ig_values)
 
     html = _build_pdf_html(columns, data, filters)
 
@@ -1209,6 +1344,7 @@ td { overflow: hidden; word-wrap: break-word; }
 .tr-raznica td.lbl { color: #E74C3C; }
 .tr-raznica td.num { color: #E74C3C; }
 td.lbl { text-align: left; }
+td.lbl.child { padding-left: 22px; font-weight: 600; }
 td.num { text-align: right; }
 .nn  { color: #C0392B; }
 .np  { color: #27AE60; }
@@ -1296,7 +1432,8 @@ td.num { text-align: right; }
             lbl_html = _prefix_html(row.get("label", ""), cint(row.get("is_inflow", -1)))
             colored  = False
 
-        td_lbl  = f'<td class="lbl">{lbl_html}</td>'
+        lbl_cls = "lbl child" if row.get("pdf_child") else "lbl"
+        td_lbl  = f'<td class="{lbl_cls}">{lbl_html}</td>'
         td_nums = "".join(
             f'<td class="num">{_fmt_num(row.get(c["fieldname"]), colored)}</td>'
             for c in period_cols

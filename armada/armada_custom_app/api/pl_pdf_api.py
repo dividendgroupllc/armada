@@ -203,9 +203,12 @@ PROD_ACCOUNT    = "5204 - Зарплата Производства - AM"   # З
 PAYABLE_ACCOUNT = "2120 - Payroll Payable - AM"          # Hodimlar shu yerda (party)
 
 
-def _get_production_workers(col_keys, company):
+def _get_production_worker_sets(col_keys, company):
     """
-    ROW D: Ishlab chiqarish ish haqi (5204) belgilangan DISTINCT hodimlar soni (oyma-oy).
+    ROW D: Ishlab chiqarish ish haqi (5204) belgilangan DISTINCT hodimlar
+    TO'PLAMI (oyma-oy). Sonini chiqarish yoki kumulyativ rejimda to'plamlarni
+    birlashtirish (union) chaqiruvchi tomonida bajariladi — hodimlarni oylar
+    bo'yicha qo'shib yuborish ikki marta sanashga olib keladi.
 
     Journal Entry tuzilishi (idx tartibida):
       - Hodim qatori → account = 2120 (Payroll Payable), party_type = Employee, CREDIT
@@ -290,7 +293,7 @@ def _get_production_workers(col_keys, company):
                 for p in pending:
                     month_emps[ck].add(p)
 
-    return [len(month_emps.get(ck, set())) for ck in col_keys]
+    return [set(month_emps.get(ck, set())) for ck in col_keys]
 
 
 # 2120 Payroll Payable — targetolog/marketolog oyliklari shu akkount orqali
@@ -408,8 +411,28 @@ def generate_pl_pdf(filters):
     # Company nomi filterdan olinadi (masalan "ARMADA MATRAS")
     company = normalized.get("company") or "ARMADA MATRAS"
 
-    data["units_sold"]         = _get_units_sold(col_keys, company)
-    data["instagram_sold"]     = _get_instagram_sold(col_keys, company)
+    # ── «Накопительные значения» (accumulated_values) rejimi ──
+    # ERPNext P&L bu rejimda har bir ustunga davr boshidan to shu ustun
+    # oxirigacha bo'lgan YIG'INDIni qo'yadi (financial_statements.get_data →
+    # only_current_fiscal_year=True, ya'ni period_list[0].year_start_date dan).
+    # Quyidagi SQL qatorlar esa tabiatan OYMA-OY. Ikkalasini aralashtirsak
+    # (masalan b2b = kumulyativ revenue − oylik instagram_revenue, yoki
+    # o'rtacha = kumulyativ summa / oylik dona) natija bir necha barobar
+    # shishib ketadi. Shuning uchun SQL qatorlarni ham kumulyativ qilamiz.
+    accumulated = bool(int(normalized.get("accumulated_values") or 0))
+
+    def _acc(series):
+        """Oylik qatordan yugurib boruvchi yig'indi (kerak bo'lsa)."""
+        if not accumulated:
+            return series
+        out, run = [], 0.0
+        for v in series:
+            run += float(v or 0)
+            out.append(run)
+        return out
+
+    data["units_sold"]         = _acc(_get_units_sold(col_keys, company))
+    data["instagram_sold"]     = _acc(_get_instagram_sold(col_keys, company))
     # Yaxlitlab ayiramiz — PDF da total = insta + b2b aynan mos tushishi uchun
     # (kasr qty bo'lsa, float ayirmada ko'rsatilgan yig'indi 1 ga farq qilishi mumkin)
     data["b2b_sold"]           = [round(u) - round(i) for u, i in
@@ -417,27 +440,41 @@ def generate_pl_pdf(filters):
     # Выручка ham xuddi shunday Инстаграм/B2B ga ajratiladi.
     # Total sifatida report'dagi revenue olinadi — ko'rsatilganda
     # revenue = insta + b2b aynan mos tushishi uchun yaxlitlab ayiramiz.
-    data["instagram_revenue"]  = _get_instagram_revenue(col_keys, company)
+    data["instagram_revenue"]  = _acc(_get_instagram_revenue(col_keys, company))
     _rev                       = data.get("revenue") or [0.0] * len(col_keys)
     data["b2b_revenue"]        = [round(r) - round(i) for r, i in
                                   zip(_rev, data["instagram_revenue"])]
     # Сырьевая себестоимость ham xuddi shunday ajratiladi
-    data["instagram_cogs"]     = _get_instagram_cogs(col_keys, company)
+    data["instagram_cogs"]     = _acc(_get_instagram_cogs(col_keys, company))
     _cogs                      = data.get("cogs") or [0.0] * len(col_keys)
     data["b2b_cogs"]           = [round(c) - round(i) for c, i in
                                   zip(_cogs, data["instagram_cogs"])]
-    data["units_produced"]     = _get_units_produced(col_keys, company)
-    data["production_cost"]    = _get_production_cost(col_keys, company)
-    data["production_workers"] = _get_production_workers(col_keys, company)
+    data["units_produced"]     = _acc(_get_units_produced(col_keys, company))
+    data["production_cost"]    = _acc(_get_production_cost(col_keys, company))
+
+    # Ishchilar soni — oqim emas, SON. Kumulyativ rejimda oylarni qo'shish
+    # bir hodimni bir necha marta sanaydi, shuning uchun to'plamlar birlashtiriladi
+    # (davr boshidan shu ustungacha bo'lgan DISTINCT hodimlar).
+    _worker_sets = _get_production_worker_sets(col_keys, company)
+    if accumulated:
+        _seen, _counts = set(), []
+        for s in _worker_sets:
+            _seen |= s
+            _counts.append(len(_seen))
+        data["production_workers"] = _counts
+    else:
+        data["production_workers"] = [len(s) for s in _worker_sets]
 
     # ── Targetolog/Marketolog oyliklari (Инстаграм group ostida) ──
     # Manba: 2120 «Payroll Payable» debeti (to'lov), party_type=Employee,
     # party = Таргетолог/Маркетолог. Bu balans akkaunti — P&L «Реклама»
     # qatorida EMAS, shuning uchun reklama'dan ayirilmaydi. Oyliklar
     # instagram_group ichida qo'shiladi → Kommerciya jami shuncha ortadi.
+    # Bu summalar Kommerciya jamiga (P&L qatorlari bilan birga) qo'shilgani uchun
+    # kumulyativ rejimda ular ham kumulyativ bo'lishi shart.
     tgt_sal, mkt_sal, _role_total = _get_role_salaries(col_keys, company)
-    data["target_salary"] = tgt_sal
-    data["market_salary"] = mkt_sal
+    data["target_salary"] = _acc(tgt_sal)
+    data["market_salary"] = _acc(mkt_sal)
 
     # PDF yaratish
     from armada.armada_custom_app.pdf_engine.pl_pdf import generate
