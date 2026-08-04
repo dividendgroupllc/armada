@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe.utils import add_months, flt, get_first_day, get_last_day, getdate
+from frappe.utils import add_months, cint, flt, get_first_day, get_last_day, getdate
 
 # Tanlangan oraliq boshlangan oyga nisbatan undan oldingi 2 oy (xronologik).
 # Misol: from_date июнь (oy 6) -> апрель (-2) va май (-1).
@@ -93,7 +93,9 @@ def execute(filters: dict[str, Any] | None = None):
     # group'lashda (Item Code, Customer, Item Group, ...) yig'indi bilan to'ldiramiz.
     # "Invoice" bundan mustasno: unda qatorlar dict va invoice/item darajalari
     # aralashgani uchun yig'indi ikki barobar bo'lib ketadi.
-    if group_by and group_by != "Invoice":
+    if group_by == "Invoice":
+        _fill_invoice_row_qty(data)
+    elif group_by:
         _fill_total_row_qty(columns, data)
 
     # Oldingi 2 oy ustunlari faqat Customer bo'yicha group qilinganda.
@@ -134,6 +136,42 @@ def execute(filters: dict[str, Any] | None = None):
         row[qty_index:qty_index] = values
 
     return columns, data
+
+
+def _fill_invoice_row_qty(data: list) -> None:
+    """group_by = "Invoice" da invoice sarlavha qatoriga item'lar qty yig'indisini yozadi.
+
+    Daraxt tuzilishi: indent 0 — invoice sarlavhasi, indent 1 — item qatorlari,
+    indent 2 — product bundle tarkibi (u indent 1 ichida allaqachon hisoblangan).
+    erpnext sarlavha qatoriga Selling/Buying/Gross Profit yig'indisini yozadi,
+    lekin Qty ni bo'sh qoldiradi. Uni ham to'ldiramiz, chunki:
+
+    * invoice qatorining o'zi to'liq ko'rinadi;
+    * jadval pastidagi umumiy "Total" qatori Qty ni indent 0 qatorlaridan
+      hisoblaydi — shunda daraxt yig'ilgan (Collapse All) holatda ham
+      Qty to'g'ri chiqadi.
+    """
+    precision = cint(frappe.db.get_default("float_precision")) or 2
+
+    header = None
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+
+        indent = row.get("indent")
+        if indent == 0:
+            header = row
+            header["qty"] = 0.0
+        elif indent == 1 and header is not None:
+            header["qty"] = flt(flt(header.get("qty")) + flt(row.get("qty")), precision)
+
+    # erpnext o'zining oxirgi "Total" qatorida ham Qty ni bo'sh qoldiradi
+    # (u ekranda ko'rinmaydi, lekin API/print original_data orqali ishlatiladi).
+    if data and isinstance(data[-1], dict) and data[-1].get("sales_invoice") == "Total":
+        data[-1]["qty"] = flt(
+            sum(flt(row.get("qty")) for row in data[:-1] if isinstance(row, dict) and row.get("indent") == 0),
+            precision,
+        )
 
 
 def _fill_total_row_qty(columns: list, data: list) -> None:

@@ -110,6 +110,74 @@ armada_custom.gp_column_total = function (values, cell) {
     return frappe.utils.report_column_total.call(this, values, cell);
 };
 
+// Invoice bo'yicha group'lashda jadval daraxt ko'rinishida bo'ladi:
+//   indent 0 — invoice sarlavha qatori (o'z item'lari yig'indisini saqlaydi)
+//   indent 1 — item qatorlari
+//   indent 2 — product bundle tarkibi (u indent 1 ichida allaqachon hisoblangan)
+// Barcha qatorni qo'shib chiqsak yig'indi ikki barobar bo'lib ketadi, shuning
+// uchun faqat indent 0 qatorlarini qo'shamiz. Qty ni ham o'sha yerdan olamiz —
+// uni armada.overrides.gross_profit._fill_invoice_row_qty to'ldirib beradi.
+// Shu tufayli daraxt yig'ilganda (Collapse All) ham yig'indi to'g'ri qoladi.
+armada_custom.GP_TREE_SUM_FIELDS = ["qty", "selling_amount", "buying_amount", "gross_profit"];
+
+armada_custom.gp_tree_sums = function (datatable) {
+    const renderer = datatable.bodyRenderer;
+    const rows = (renderer && renderer.visibleRows) || [];
+    // visibleRows har render'da yangi massiv bo'ladi — reference bo'yicha cache.
+    // Aks holda har bir ustun uchun butun jadval qaytadan aylanib chiqilardi.
+    if (datatable.__armada_gp_sums && datatable.__armada_gp_sums.rows === rows) {
+        return datatable.__armada_gp_sums.sums;
+    }
+
+    const invoice_rows = [];
+    const item_rows = [];
+    rows.forEach((row) => {
+        const indent = row.meta ? row.meta.indent : null;
+        if (indent === 0) invoice_rows.push(row);
+        else if (indent === 1) item_rows.push(row);
+    });
+
+    // Ustun filtri invoice sarlavhalarini butunlay chiqarib tashlashi mumkin —
+    // bunday holda item qatorlaridan hisoblaymiz (natija bir xil chiqadi).
+    const source_rows = invoice_rows.length ? invoice_rows : item_rows;
+
+    const sums = {};
+    armada_custom.GP_TREE_SUM_FIELDS.forEach((f) => (sums[f] = 0));
+    source_rows.forEach((row) => {
+        row.forEach((cell) => {
+            const f = cell.column && (cell.column.fieldname || cell.column.id);
+            if (f in sums) sums[f] += flt(cell.content);
+        });
+    });
+
+    datatable.__armada_gp_sums = { rows, sums };
+    return sums;
+};
+
+armada_custom.gp_tree_column_total = function (values, cell) {
+    const col = cell.column || {};
+    const fname = col.fieldname || col.id;
+    const sums = armada_custom.gp_tree_sums(this);
+
+    if (armada_custom.GP_TREE_SUM_FIELDS.includes(fname)) {
+        return sums[fname];
+    }
+    if (fname === "avg._selling_rate") {
+        return sums.qty ? sums.selling_amount / sums.qty : "";
+    }
+    if (fname === "valuation_rate") {
+        return sums.qty ? sums.buying_amount / sums.qty : "";
+    }
+    if (fname === "gross_profit_%") {
+        return sums.selling_amount
+            ? (sums.gross_profit / Math.abs(sums.selling_amount)) * 100
+            : "";
+    }
+    // Matn/sana/link ustunlari uchun null — shunda datatable birinchi ustunga
+    // "Total" yozuvini o'zi qo'yadi.
+    return frappe.utils.report_column_total.call(this, values, cell);
+};
+
 armada_custom.gp_datatable_options = function (options) {
     options = options || {};
     // prepare_columns ichida bo'sh {} bilan ham chaqiriladi — himoya
@@ -123,21 +191,21 @@ armada_custom.gp_datatable_options = function (options) {
     } catch (e) {
         return options;
     }
-
-    // Invoice group'lashda qatorlar ikki darajali (indent) — footer yig'indisi
-    // ikki barobar bo'lib ketadi, shuning uchun faqat boshqa group'lashlarda.
-    const use_footer = Boolean(group_by && group_by !== "Invoice");
-    // Doim boolean qo'yamiz: showTotalRow (false) !== add_total_row (0) bo'lgani
-    // uchun query_report datatable'ni har safar qayta yaratadi va group_by
-    // almashganda bu funksiya qayta ishlaydi.
-    options.showTotalRow = use_footer;
-    if (!use_footer) return options;
+    // Doim boolean qo'yamiz: showTotalRow (true/false) !== add_total_row (0)
+    // bo'lgani uchun query_report datatable'ni har safar qayta yaratadi va
+    // group_by almashganda bu funksiya qayta ishlaydi.
+    options.showTotalRow = Boolean(group_by);
+    if (!group_by) return options;
 
     // Skriptning o'z "Total" qatorini olib tashlaymiz — footer o'zi hisoblaydi.
+    // (U oddiy data qatori bo'lgani uchun filtr/skroll bilan yo'qolib ketardi.)
     const first_field = options.columns[0].id || options.columns[0].fieldname;
     options.data = options.data.filter((row) => row && row[first_field] !== "Total");
     options.hooks = Object.assign({}, options.hooks, {
-        columnTotal: armada_custom.gp_column_total,
+        columnTotal:
+            group_by === "Invoice"
+                ? armada_custom.gp_tree_column_total
+                : armada_custom.gp_column_total,
     });
     return options;
 };
