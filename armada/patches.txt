@@ -10,3 +10,5 @@ armada.patches.show_barcode_in_transaction_item_grids
 armada.patches.unhide_barcode_in_transaction_item_grids
 armada.patches.force_show_barcode_in_transaction_grids
 armada.patches.move_yandex_instagram_under_instagram
+armada.patches.add_production_entry_sales_order_fields
+armada.patches.setup_production_queue_access

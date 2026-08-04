@@ -26,6 +26,13 @@ fixtures = [
                 "Item-segment",
                 "Item-standard",
                 "Kassa-custom_sub_account_name",
+                "Production Entry-custom_manba",
+                "Production Entry-custom_zakaz_section",
+                "Production Entry-custom_sales_order",
+                "Production Entry-custom_mijoz",
+                "Production Entry-custom_zakaz_column",
+                "Production Entry-custom_muddat",
+                "Production Entry-custom_sales_order_item",
                 "Sales Invoice-custom_auto_created_from_sales_order",
                 "Stock Entry-custom_production_entry",
                 "Supplier-contact_number",
@@ -57,8 +64,12 @@ doc_events = {
         "validate": "armada.armada_custom_app.barcode.sync_item_barcode_display",
     },
     "Sales Order": {
-        "on_submit": "armada.armada_custom_app.events.sales_order.on_sales_order_submit",
+        "on_submit": [
+            "armada.armada_custom_app.events.sales_order.on_sales_order_submit",
+            "armada.armada_custom_app.events.production_from_sales_order.create_production_entries",
+        ],
         "before_cancel": "armada.armada_custom_app.events.sales_order.before_sales_order_cancel",
+        "on_cancel": "armada.armada_custom_app.events.production_from_sales_order.release_production_entries",
     },
     "Cash Flow Categories": {
         "on_update": "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
