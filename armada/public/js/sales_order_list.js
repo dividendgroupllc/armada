@@ -12,8 +12,9 @@ function render_qty_summary(listview) {
 
 	// Exact filters the list is currently using (ID search, date range, etc.)
 	const filters = (listview.get_filters_for_args() || []).slice();
-	// Count only confirmed (Submitted) orders
-	filters.push(["Sales Order", "docstatus", "=", 1]);
+	// Count drafts too (workflow: "Tasdiqqa jo'natish" => docstatus 0),
+	// skip only cancelled orders
+	filters.push(["Sales Order", "docstatus", "!=", 2]);
 
 	// Guard against out-of-order async responses when filters change quickly
 	const token = (listview.__qty_summary_token || 0) + 1;
