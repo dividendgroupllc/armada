@@ -148,9 +148,11 @@ app_include_js = [
 # include js in doctype views
 doctype_js = {
 	"Journal Entry": "public/js/journal_entry.js",
-	"Sales Invoice": "public/js/item_code_barcode_scan.js",
-	"Delivery Note": "public/js/item_code_barcode_scan.js",
-	"Stock Entry": "public/js/item_code_barcode_scan.js",
+	"Sales Invoice": ["public/js/item_code_barcode_scan.js", "public/js/ombor_qoldiq.js"],
+	"Delivery Note": ["public/js/item_code_barcode_scan.js", "public/js/ombor_qoldiq.js"],
+	"Stock Entry": ["public/js/item_code_barcode_scan.js", "public/js/ombor_qoldiq.js"],
+	"Purchase Receipt": "public/js/ombor_qoldiq.js",
+	"Purchase Invoice": "public/js/ombor_qoldiq.js",
 }
 doctype_list_js = {
 	"Sales Order": "public/js/sales_order_list.js",
