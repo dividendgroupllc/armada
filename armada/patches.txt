@@ -14,3 +14,5 @@ armada.patches.add_production_entry_sales_order_fields
 armada.patches.setup_production_queue_access
 armada.patches.add_ombor_qoldiq_fields
 armada.patches.fit_ombor_qoldiq_in_grids
+armada.patches.reset_item_grid_user_settings
+armada.patches.arrange_se_ostatka_grid

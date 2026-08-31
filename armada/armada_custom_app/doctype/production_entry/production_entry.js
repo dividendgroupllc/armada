@@ -9,6 +9,14 @@ frappe.ui.form.on('Production Entry', {
         }
     },
 
+    onload: function(frm) {
+        // Ishlab chiqarish standart submit soati — 12:00 (o'zgartirsa bo'ladi)
+        if (frm.is_new() && !frm.doc.amended_from) {
+            frm.set_value("set_posting_time", 1);
+            frm.set_value("posting_time", "12:00:00");
+        }
+    },
+
     refresh: function(frm) {
         // Set query for BOM - only show BOMs for selected item
         frm.set_query("bom_no", function() {
