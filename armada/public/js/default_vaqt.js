@@ -4,6 +4,9 @@
 //   Stock Entry (transfer)  -> Склад Производство 10:00, -> Склад ГП 14:00
 //   Production Entry        12:00 (o'z JS'ida — production_entry.js)
 //   Delivery Note           16:00
+// Stock Entry omborlari: Chiqim peremesheniya (from=Производство) yoki
+// tayyor mahsulot kirimi (to=ГП) dan ochilsa Производство -> ГП,
+// aks holda (Kirim peremesheniya ham) Сырьё -> Производство.
 // Bitta fayl bir nechta doctype'ga ulangan (hooks.doctype_js) — window guard
 // bilan faqat bir marta ro'yxatdan o'tkazamiz.
 (function () {
@@ -57,13 +60,35 @@
 	// ---- Stock Entry ----
 
 	function se_vaqt(frm) {
-		if (frm.doc.purpose !== "Material Transfer") return;
+		if (!yangi(frm) || frm.doc.purpose !== "Material Transfer") return;
 		const t = frm.doc.to_warehouse || "";
 		for (const [prefix, vaqt] of OMBOR_SOAT) {
 			if (t.startsWith(prefix)) {
 				set_vaqt(frm, vaqt);
 				return;
 			}
+		}
+	}
+
+	// Yangi hujjat qaysi ro'yxatdan (workspace shortcutdan) ochilganini aniqlaymiz.
+	// Frappe from/to_warehouse'ni (no_copy) filtrdan yangi hujjatga o'tkazmaydi,
+	// shuning uchun ro'yxat filtrlarini o'zimiz o'qiymiz.
+	function kelgan_filtrlar() {
+		try {
+			const prev = frappe.get_prev_route ? frappe.get_prev_route() : [];
+			if (prev[0] !== "List" || prev[1] !== "Stock Entry") return null;
+			if (!window.cur_list || cur_list.doctype !== "Stock Entry" || !cur_list.filter_area)
+				return null;
+			// Warehouse daraxt bo'lgani uchun ro'yxat "=" ni
+			// "descendants of (inclusive)" ga aylantiradi — ikkalasini ham olamiz
+			const op = ["=", "descendants of (inclusive)", "descendants of"];
+			const out = {};
+			cur_list.filter_area.get().forEach((f) => {
+				if (op.includes(f[2])) out[f[1]] = f[3];
+			});
+			return out;
+		} catch (e) {
+			return null;
 		}
 	}
 
@@ -80,17 +105,35 @@
 		}
 
 		// standart yo'nalish: Склад Сырьё -> Склад Производство
+		let manba = "Склад Сырьё";
+		let maqsad = "Склад Производство";
+
+		// Chiqim peremesheniya (from=Производство) yoki tayyor mahsulot kirimi
+		// (to=ГП) dan kelgan bo'lsa — yo'nalish: Склад Производство -> Склад ГП.
+		// Kirim peremesheniya (to=Производство) esa standartda qoladi:
+		// Склад Сырьё -> Склад Производство.
+		const filt = kelgan_filtrlar();
+		if (filt) {
+			const s = filt.from_warehouse || "";
+			const t = filt.to_warehouse || "";
+			if (s.startsWith("Склад Производство") || t.startsWith("Склад ГП")) {
+				manba = "Склад Производство";
+				maqsad = "Склад ГП";
+			}
+		}
+
 		frappe.db
 			.get_list("Warehouse", {
-				filters: { warehouse_name: ["in", ["Склад Сырьё", "Склад Производство"]] },
+				filters: { warehouse_name: ["in", [manba, maqsad]] },
 				fields: ["name", "warehouse_name"],
 			})
 			.then((omborlar) => {
+				// foydalanuvchi bu orada o'zi tanlab ulgurgan bo'lsa — tegmaymiz
+				if (!yangi(frm) || frm.doc.from_warehouse || frm.doc.to_warehouse) return;
 				const map = {};
 				(omborlar || []).forEach((w) => (map[w.warehouse_name] = w.name));
-				if (map["Склад Сырьё"]) frm.set_value("from_warehouse", map["Склад Сырьё"]);
-				if (map["Склад Производство"])
-					frm.set_value("to_warehouse", map["Склад Производство"]);
+				if (map[manba]) frm.set_value("from_warehouse", map[manba]);
+				if (map[maqsad]) frm.set_value("to_warehouse", map[maqsad]);
 				se_vaqt(frm);
 			});
 	}
