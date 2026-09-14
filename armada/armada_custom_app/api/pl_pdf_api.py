@@ -51,6 +51,8 @@ ACCOUNT_KEY_MAP = {
     "5226 - Хайрия эхсон": "khairiya",
     "5238 - Инстаграм": "instagram_exp",   # group (52003 Kommerciya ostida)
     "5239 - Таргет": "target",             # leaf (5238 Инстаграм ichida)
+    "5240 - Таргетолог ойлик": "target_salary",   # leaf (5238 Инстаграм ichida)
+    "5241 - Маркетолог ойлик": "market_salary",   # leaf (5238 Инстаграм ichida)
     # Tax
     "5232 - Налог на прибыль": "nalog_prib",
     # CHANGE 2: Кредит va Алименты o'chirilgan (CoA dan)
@@ -296,70 +298,6 @@ def _get_production_worker_sets(col_keys, company):
     return [set(month_emps.get(ck, set())) for ck in col_keys]
 
 
-# 2120 Payroll Payable — targetolog/marketolog oyliklari shu akkount orqali
-# to'lanadi (party_type=Employee, party = Таргетолог/Маркетолог employee'lari).
-ROLE_SALARY_ACCOUNT = "2120 - Payroll Payable - AM"
-
-
-def _get_role_salaries(col_keys, company):
-    """Targetolog/Marketolog oylik (vyplata) — oyma-oy.
-
-    Manba: Journal Entry — 2120 «Payroll Payable» akkountiga tegishli
-    satrlar, party_type = 'Employee' va party Таргетолог/Маркетолог
-    employee'lariga tegishli bo'lganda. Har bir satrning DEBET summasi
-    (to'lov) tegishli oyga qo'shiladi.
-
-    Rol employee (party yoki employee_name) nomidan aniqlanadi:
-      - nomida 'таргетолог' bor  → target
-      - nomida 'маркетолог' bor  → market
-    Har bir JE satri aniq bitta employee'ga bog'langani uchun 50/50 bo'lish
-    kerak emas — har satr to'g'ridan-to'g'ri o'z roliga qo'shiladi.
-
-    2120 — balans akkaunti (P&L «Реклама» qatorida EMAS), shuning uchun bu
-    summa reklama'dan ayirilmaydi.
-
-    Qaytaradi: (target_vals, market_vals, total_vals) — col_keys tartibida.
-    """
-    tgt   = {ck: 0.0 for ck in col_keys}
-    mkt   = {ck: 0.0 for ck in col_keys}
-    total = {ck: 0.0 for ck in col_keys}
-
-    rows = frappe.db.sql("""
-        SELECT
-            LOWER(DATE_FORMAT(je.posting_date, '%%b'))    AS mon,
-            YEAR(je.posting_date)                         AS yr,
-            LOWER(COALESCE(emp.employee_name, jea.party)) AS who,
-            SUM(jea.debit)                                AS amt
-        FROM `tabJournal Entry` je
-        JOIN `tabJournal Entry Account` jea ON jea.parent = je.name
-        LEFT JOIN `tabEmployee` emp ON emp.name = jea.party
-        WHERE je.docstatus     = 1
-          AND je.company        = %(company)s
-          AND jea.account       = %(acct)s
-          AND jea.party_type    = 'Employee'
-          AND jea.debit         > 0
-          AND (jea.party LIKE '%%аргетолог%%' OR emp.employee_name LIKE '%%аргетолог%%'
-               OR jea.party LIKE '%%аркетолог%%' OR emp.employee_name LIKE '%%аркетолог%%')
-        GROUP BY yr, mon, who
-    """, {"company": company, "acct": ROLE_SALARY_ACCOUNT}, as_dict=True)
-
-    for r in rows:
-        ck = f"{r.mon}_{r.yr}"
-        if ck not in total:
-            continue
-        amt = float(r.amt or 0)
-        who = (r.who or "").lower()
-        total[ck] += amt
-        if "аргетолог" in who:
-            tgt[ck] += amt
-        elif "аркетолог" in who:
-            mkt[ck] += amt
-
-    return ([tgt[ck]   for ck in col_keys],
-            [mkt[ck]   for ck in col_keys],
-            [total[ck] for ck in col_keys])
-
-
 # ────────────────────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
@@ -466,15 +404,12 @@ def generate_pl_pdf(filters):
         data["production_workers"] = [len(s) for s in _worker_sets]
 
     # ── Targetolog/Marketolog oyliklari (Инстаграм group ostida) ──
-    # Manba: 2120 «Payroll Payable» debeti (to'lov), party_type=Employee,
-    # party = Таргетолог/Маркетолог. Bu balans akkaunti — P&L «Реклама»
-    # qatorida EMAS, shuning uchun reklama'dan ayirilmaydi. Oyliklar
-    # instagram_group ichida qo'shiladi → Kommerciya jami shuncha ortadi.
-    # Bu summalar Kommerciya jamiga (P&L qatorlari bilan birga) qo'shilgani uchun
-    # kumulyativ rejimda ular ham kumulyativ bo'lishi shart.
-    tgt_sal, mkt_sal, _role_total = _get_role_salaries(col_keys, company)
-    data["target_salary"] = _acc(tgt_sal)
-    data["market_salary"] = _acc(mkt_sal)
+    # Manba: 5240 «Таргетолог ойлик» va 5241 «Маркетолог ойлик» — 5238 Инстаграм
+    # guruhidagi oddiy P&L xarajat akkauntlari. ACCOUNT_KEY_MAP orqali
+    # target_salary / market_salary kalitlariga tushadi, pl_pdf.py dagi
+    # ig_group ularni Инстаграм guruhiga qo'shadi. `com` ro'yxatida yo'q —
+    # shuning uchun Kommerciya jamida ikki marta sanalmaydi.
+    # Kumulyativ rejim ERPNext P&L hisobotining o'zidan keladi, _acc() kerak emas.
 
     # PDF yaratish
     from armada.armada_custom_app.pdf_engine.pl_pdf import generate
