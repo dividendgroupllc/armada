@@ -41,10 +41,10 @@ HDR_ROW_PT           = 11.6
 # ── TEPADA yangi metrik qatorlar uchun joy ochish ──
 # Bu top dan PASTdagi hamma narsa pastga suriladi:
 TOP_INSERT_AFTER_TOP = 67.0
-# Surilish (7 qator × 11.6pt):
-TOP_INSERT_PT        = 81.2
-# 7 yangi qator tops (Месяц=59 dan keyin):
-NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8, 116.4, 128.0, 139.6]
+# Surilish (8 qator × 11.6pt):
+TOP_INSERT_PT        = 92.8
+# 8 yangi qator tops (Месяц=59 dan keyin):
+NEW_ROW_TOPS         = [70.0, 81.6, 93.2, 104.8, 116.4, 128.0, 139.6, 151.2]
 NEW_ROW_H            = 11.6
 
 # ── Выручка (82) ostiga 2 yangi qator (Инстаграм/B2B выручка) ──
@@ -149,9 +149,10 @@ CATEGORY_ROWS = {"revenue", "cogs"}
 # 4-element: qator uslubi — "red" (total ko'rinishi) yoki "zebra" (oddiy)
 # prod_volume — "Объём производства" kategoriya qatori: ostidagi 3 qator yig'indisi
 EXTRA_ROWS = [
-    ("units_sold",         "Количество продаж",                   "plain", "red"),
+    ("units_sold",         "Матрас — Количество продаж",          "plain", "red"),
     ("instagram_sold",     "Инстаграм продаж",                    "plain", "zebra"),
     ("b2b_sold",           "B2B продаж",                          "plain", "zebra"),
+    ("pillow_sold",        "Ястик — Количество продаж",           "plain", "red"),
     ("prod_volume",        "Объём производства",                  "num",   "red"),
     ("units_produced",     "Количество произведённых изделий",    "plain", "zebra"),
     ("production_cost",    "Сумма производства",                  "num",   "zebra"),
@@ -579,7 +580,7 @@ def generate(data: dict,
     col_keys = (col_keys or [])[:n_cols]
 
     full = {**data, **_derive(data, n_cols)}
-    for dkey in ["units_sold","instagram_sold","b2b_sold",
+    for dkey in ["units_sold","instagram_sold","b2b_sold","pillow_sold",
                  "instagram_revenue","b2b_revenue",
                  "instagram_cogs","b2b_cogs","programma",
                  "instagram_exp","target","yandex_inst",

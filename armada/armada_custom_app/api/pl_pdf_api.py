@@ -61,8 +61,19 @@ ACCOUNT_KEY_MAP = {
 
 # ── CHANGE 4: 4 yangi metrik funksiyalar ────────────────────────────────────────
 
+# Matras — toza "Готовый продукт" item group (xomashyo/qadoqlash/ястик aralashmaydi).
+MATTRESS_ITEM_GROUP = "Готовый продукт"
+# Ястик — "Сырьё" ichida item_code'ida "ястик" so'zi bor SKU'lar (xomashyoning
+# qolgan qismidan — lenta, stakan, prujina va h.k. — shu filtr bilan ajratiladi).
+PILLOW_ITEM_GROUP = "Сырьё"
+PILLOW_NAME_PATTERN = "%ястик%"
+
+
 def _get_units_sold(col_keys, company):
-    """ROW A: Барча submitted Sales Invoice Item qty summasi (oyma-oy)."""
+    """ROW A: Matras (item_group = 'Готовый продукт') qty summasi (oyma-oy).
+
+    Ilgari BARCHA item_group'lar (xomashyo, ястик, reklama va h.k.) birga
+    qo'shilib, "Количество продаж" noto'g'ri (shishirilgan) chiqar edi."""
     result = {ck: 0.0 for ck in col_keys}
     rows = frappe.db.sql("""
         SELECT
@@ -71,10 +82,12 @@ def _get_units_sold(col_keys, company):
             SUM(sii.qty)                               AS total_qty
         FROM `tabSales Invoice Item` sii
         JOIN `tabSales Invoice` si ON si.name = sii.parent
+        JOIN `tabItem` it ON it.item_code = sii.item_code
         WHERE si.docstatus = 1
           AND si.company   = %(company)s
+          AND it.item_group = %(item_group)s
         GROUP BY YEAR(si.posting_date), MONTH(si.posting_date)
-    """, {"company": company}, as_dict=True)
+    """, {"company": company, "item_group": MATTRESS_ITEM_GROUP}, as_dict=True)
     for r in rows:
         ck = f"{r.mon}_{r.yr}"
         if ck in result:
@@ -84,7 +97,7 @@ def _get_units_sold(col_keys, company):
 
 def _get_instagram_sold(col_keys, company):
     """ROW A1: Инстаграм mijozlari (customer 'Инстаграм%' bilan boshlanadi)
-    bo'yicha submitted Sales Invoice Item qty summasi (oyma-oy).
+    bo'yicha matras (item_group = 'Готовый продукт') qty summasi (oyma-oy).
     B2B = units_sold - instagram_sold (API da hisoblanadi)."""
     result = {ck: 0.0 for ck in col_keys}
     rows = frappe.db.sql("""
@@ -94,11 +107,39 @@ def _get_instagram_sold(col_keys, company):
             SUM(sii.qty)                               AS total_qty
         FROM `tabSales Invoice Item` sii
         JOIN `tabSales Invoice` si ON si.name = sii.parent
+        JOIN `tabItem` it ON it.item_code = sii.item_code
         WHERE si.docstatus = 1
           AND si.company   = %(company)s
           AND si.customer LIKE 'Инстаграм%%'
+          AND it.item_group = %(item_group)s
         GROUP BY YEAR(si.posting_date), MONTH(si.posting_date)
-    """, {"company": company}, as_dict=True)
+    """, {"company": company, "item_group": MATTRESS_ITEM_GROUP}, as_dict=True)
+    for r in rows:
+        ck = f"{r.mon}_{r.yr}"
+        if ck in result:
+            result[ck] = float(r.total_qty or 0)
+    return [result.get(ck, 0.0) for ck in col_keys]
+
+
+def _get_pillow_sold(col_keys, company):
+    """ROW A2: Ястик (item_group = 'Сырьё', nomida "ястик" bor SKU'lar) qty
+    summasi (oyma-oy). "Сырьё" guruhining qolgan qismi (lenta, stakan,
+    prujina va h.k.) bu qatorga kirmaydi."""
+    result = {ck: 0.0 for ck in col_keys}
+    rows = frappe.db.sql("""
+        SELECT
+            LOWER(DATE_FORMAT(si.posting_date, '%%b')) AS mon,
+            YEAR(si.posting_date)                      AS yr,
+            SUM(sii.qty)                               AS total_qty
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        JOIN `tabItem` it ON it.item_code = sii.item_code
+        WHERE si.docstatus = 1
+          AND si.company   = %(company)s
+          AND it.item_group = %(item_group)s
+          AND LOWER(it.item_code) LIKE %(pattern)s
+        GROUP BY YEAR(si.posting_date), MONTH(si.posting_date)
+    """, {"company": company, "item_group": PILLOW_ITEM_GROUP, "pattern": PILLOW_NAME_PATTERN}, as_dict=True)
     for r in rows:
         ck = f"{r.mon}_{r.yr}"
         if ck in result:
@@ -375,6 +416,8 @@ def generate_pl_pdf(filters):
     # (kasr qty bo'lsa, float ayirmada ko'rsatilgan yig'indi 1 ga farq qilishi mumkin)
     data["b2b_sold"]           = [round(u) - round(i) for u, i in
                                   zip(data["units_sold"], data["instagram_sold"])]
+    # Ястик — matrasdan alohida, "Количество продаж" ga qo'shilmaydi
+    data["pillow_sold"]        = _acc(_get_pillow_sold(col_keys, company))
     # Выручка ham xuddi shunday Инстаграм/B2B ga ajratiladi.
     # Total sifatida report'dagi revenue olinadi — ko'rsatilganda
     # revenue = insta + b2b aynan mos tushishi uchun yaxlitlab ayiramiz.

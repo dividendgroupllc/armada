@@ -16,3 +16,4 @@ armada.patches.add_ombor_qoldiq_fields
 armada.patches.fit_ombor_qoldiq_in_grids
 armada.patches.reset_item_grid_user_settings
 armada.patches.arrange_se_ostatka_grid
+armada.patches.sync_sales_invoice_customer_group
