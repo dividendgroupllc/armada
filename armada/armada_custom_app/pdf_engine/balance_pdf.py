@@ -84,7 +84,7 @@ ROW_MAP = {
     227: ("nalichnye",              "num"),
     238: ("klik",                   "num"),
     249: ("perechislenie",          "num"),
-    260: ("empty_cash_row",         "num"),
+    260: ("payme",                  "num"),
     272: ("raznitsa_peremesh",      "num"),
 
     # [NEW] Дебиторская задолж-ть subtotal (top=294)
@@ -137,6 +137,13 @@ ROW_MAP = {
     741: ("raznitsa",               "num"),
 }
 
+# Shablonda label matni bo'lmagan qatorlar uchun qo'lda chiziladigan label
+# (top=260 — avval bo'sh zaxira qator, endi "Пайме" uchun ishlatilmoqda)
+EXTRA_LABELS = {
+    260: {"text": "Пайме", "x0": 38.48, "bottom": 267.31,
+          "font": "Rubik", "size": 6.90},
+}
+
 CUTOFF_TOP = 755
 
 
@@ -167,6 +174,7 @@ def _derive(data, n):
     nalichnye         = g("nalichnye")
     klik              = g("klik")
     perechislenie     = g("perechislenie")
+    payme             = g("payme")
     raznitsa_peremesh = g("raznitsa_peremesh")
     zadolzh_klientov  = g("zadolzh_klientov")
     avansy_postav     = g("avansy_postavshikam")
@@ -202,7 +210,7 @@ def _derive(data, n):
         for i in range(n)
     ]
     dengi = [
-        nalichnye[i] + klik[i] + perechislenie[i] + raznitsa_peremesh[i]
+        nalichnye[i] + klik[i] + perechislenie[i] + payme[i] + raznitsa_peremesh[i]
         for i in range(n)
     ]
     debit_zadolzh = [
@@ -262,7 +270,6 @@ def _derive(data, n):
         "kratkosrochnye":  kratkosrochnye,
         "kred_zadolzh":    kred_zadolzh,
         # Existing
-        "empty_cash_row":  [0.0] * n,
         "pribyl_proshlyh": pribyl_pr,
         "itogo_aktiv":     itogo_aktiv,
         "itogo_passiv":    itogo_passiv,
@@ -393,6 +400,12 @@ def generate(data: dict,
                            ch.get("size", 6.90))
                 cv.setFillColor(to_color(ch.get("non_stroking_color", (0, 0, 0))))
                 cv.drawString(ch["x0"], rl_y(ch["bottom"] - shift), txt)
+
+            if top_key in EXTRA_LABELS:
+                lbl = EXTRA_LABELS[top_key]
+                cv.setFont(lbl["font"], lbl["size"])
+                cv.setFillColor(C_BLACK)
+                cv.drawString(lbl["x0"], rl_y(lbl["bottom"] - shift), lbl["text"])
 
             # ROW_MAP match
             best_key, best_dist = None, 9999

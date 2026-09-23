@@ -33,6 +33,7 @@ ACCOUNT_KEY_MAP = {
     "1110 - Наличные":                        "nalichnye",
     "1111 - Клик":                            "klik",
     "1112 - Перечисление":                    "perechislenie",
+    "1113 - Пайме":                           "payme",
     # Разница в перемещении — hozircha ERPNext'da yo'q
     # "XXXX - Разница в перемещении":            "raznitsa_peremesh",
 
