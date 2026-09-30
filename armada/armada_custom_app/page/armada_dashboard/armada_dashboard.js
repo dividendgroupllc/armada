@@ -40,6 +40,10 @@ class ArmadaDashboard {
 			from_date: _month_ago,
 			to_date: _today
 		};
+		this.pl_filters = {
+			from_date: frappe.datetime.year_start(),
+			to_date: _today
+		};
 		this.counterparties_filters = {
 			from_date: _month_ago,
 			to_date: _today
@@ -163,6 +167,10 @@ class ArmadaDashboard {
 			me.apply_page_date_range('sales');
 		});
 
+		this.wrapper.on('click', '#btn-apply-pl-date', function() {
+			me.apply_page_date_range('pl');
+		});
+
 		this.wrapper.on('click', '#btn-apply-cashflow-date', function() {
 			me.apply_page_date_range('cashflow');
 		});
@@ -212,6 +220,7 @@ class ArmadaDashboard {
 	_get_page_filters(page) {
 		if (page === 'sales') return this.sales_filters;
 		if (page === 'cashflow') return this.cashflow_filters;
+		if (page === 'pl') return this.pl_filters;
 		if (page === 'counterparties') return this.counterparties_filters;
 		if (page === 'warehouse') return this.warehouse_filters;
 		return this.main_filters;
@@ -336,6 +345,9 @@ class ArmadaDashboard {
 				break;
 			case 'sales':
 				this.render_sales_page();
+				break;
+			case 'pl':
+				this.render_pl_page();
 				break;
 			case 'cashflow':
 				this.render_cashflow_page();
@@ -1108,6 +1120,95 @@ class ArmadaDashboard {
 		`;
 		
 		$('#sales-data-table').html(html);
+	}
+
+	// ==================== P&L PAGE (Готовый продукт) ====================
+	render_pl_page() {
+		$('#page-title').text('P&L — ГОТОВЫЙ ПРОДУКТ');
+
+		let content = `
+			<div class="pl-page">
+				<div class="dark-filter-bar" style="justify-content: flex-end;">
+					<div class="filter-item date-range-item">
+						<div class="dark-date-range" id="pl-date-range">
+							<span class="date-range-text"></span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="date-range-dropdown" id="pl-date-dropdown">
+							<div class="date-inputs">
+								<input type="date" id="pl-date-start" class="date-input-dark">
+								<span class="date-separator">-</span>
+								<input type="date" id="pl-date-end" class="date-input-dark">
+							</div>
+							<button class="btn-apply-date" id="btn-apply-pl-date">Применить</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="charts-row">
+					<div class="chart-container full scrollable-card">
+						<div class="chart-title">PROFIT AND LOSS — ГОТОВЫЙ ПРОДУКТ</div>
+						<div class="ranking-table-wrapper" id="pl-fg-table"></div>
+					</div>
+				</div>
+			</div>
+		`;
+
+		$('#page-content').html(content);
+		this.init_page_date_range('pl');
+		this.load_pl_data();
+	}
+
+	load_pl_data() {
+		let me = this;
+		frappe.call({
+			method: 'armada.armada_custom_app.api.finished_goods_pl.get_pl',
+			args: {
+				from_date: this.pl_filters.from_date,
+				to_date: this.pl_filters.to_date
+			},
+			freeze: false,
+			callback: function(r) {
+				if (r.message) me.render_pl_table(r.message);
+			}
+		});
+	}
+
+	render_pl_table(data) {
+		const cols = data.columns.slice();
+		if (!cols.length) {
+			$('#pl-fg-table').html('<div style="padding:20px;color:var(--color-muted)">Нет данных за выбранный период</div>');
+			return;
+		}
+		const total = cols.reduce((a, c) => {
+			a.income += c.income; a.expense += c.expense; a.profit += c.profit;
+			return a;
+		}, { label: 'Итого', income: 0, expense: 0, profit: 0, is_total: true });
+		cols.push(total);
+
+		const money = v => this.format_currency(Math.round(v));
+		const cells = (fn) => cols.map(c => `<td class="${c.is_total ? 'pl-total-col' : ''}">${fn(c)}</td>`).join('');
+
+		const html = `
+			<table class="ranking-table pl-matrix">
+				<thead>
+					<tr>
+						<th>Счёт</th>
+						${cols.map(c => `<th class="${c.is_total ? 'pl-total-col' : ''}">${c.label}</th>`).join('')}
+					</tr>
+				</thead>
+				<tbody>
+					<tr class="pl-group-header"><td colspan="${cols.length + 1}"><strong>Доходы</strong></td></tr>
+					<tr><td>4110 - Sales</td>${cells(c => money(c.income))}</tr>
+					<tr class="pl-subtotal-row"><td><strong>Итого доходы</strong></td>${cells(c => `<strong>${money(c.income)}</strong>`)}</tr>
+					<tr class="pl-group-header"><td colspan="${cols.length + 1}"><strong>Расходы</strong></td></tr>
+					<tr><td>5111 - Cost of Goods Sold</td>${cells(c => money(c.expense))}</tr>
+					<tr class="pl-subtotal-row"><td><strong>Итого расходы</strong></td>${cells(c => `<strong>${money(c.expense)}</strong>`)}</tr>
+					<tr class="pl-grand-total-row"><td><strong>Прибыль / Убыток</strong></td>${cells(c => `<strong class="${c.profit < 0 ? 'negative' : 'positive'}">${money(c.profit)}</strong>`)}</tr>
+				</tbody>
+			</table>
+		`;
+		$('#pl-fg-table').html(html);
 	}
 
 	// ==================== CASHFLOW PAGE ====================

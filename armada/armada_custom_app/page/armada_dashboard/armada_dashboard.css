@@ -1785,3 +1785,18 @@ td.highlight-red {
     font-size: 14px;
     background: var(--bg-table-header);
 }
+
+/* ── P&L page (Готовый продукт) ───────────────────────────────────────────── */
+.pl-matrix th,
+.pl-matrix td {
+    text-align: right;
+    white-space: nowrap;
+}
+.pl-matrix th:first-child,
+.pl-matrix td:first-child {
+    text-align: left;
+}
+.pl-matrix .pl-total-col {
+    background: var(--bg-table-header);
+    font-weight: 700;
+}
