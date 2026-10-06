@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 
 class Kassa(Document):
@@ -19,6 +19,7 @@ class Kassa(Document):
         self.validate_transfer()
         self.validate_amount()
         self.validate_currency()
+        self.validate_invoices()
 
     def on_submit(self):
         """Submit bo'lganda Payment Entry yoki Journal Entry yaratish"""
@@ -58,6 +59,14 @@ class Kassa(Document):
         pe.reference_no = self.name
         pe.reference_date = self.date
         pe.remarks = self.remarks or f"Payment for {self.name}"
+
+        # Operator tanlagan invoyslarga bog'lash; qolgan summa avans bo'lib qoladi
+        for row in self.get("invoices") or []:
+            pe.append("references", {
+                "reference_doctype": "Sales Invoice",
+                "reference_name": row.sales_invoice,
+                "allocated_amount": flt(row.allocated_amount),
+            })
 
         pe.flags.ignore_permissions = True
         pe.insert()
@@ -317,6 +326,43 @@ class Kassa(Document):
             je_doc.cancel()
             frappe.msgprint(_("Journal Entry {0} отменен").format(je_name))
 
+    def validate_invoices(self):
+        """Invoys tanlash faqat Customer'dan Приход uchun; summalarni tekshirish"""
+        rows = self.get("invoices") or []
+        if not rows:
+            return
+
+        if not (self.transaction_type == "Приход" and self.party_type == "Customer" and self.party):
+            self.set("invoices", [])
+            return
+
+        total = 0
+        seen = set()
+        for row in rows:
+            if row.sales_invoice in seen:
+                frappe.throw(_("Строка {0}: инвойс {1} такрорланган").format(row.idx, row.sales_invoice))
+            seen.add(row.sales_invoice)
+
+            si = frappe.db.get_value(
+                "Sales Invoice", row.sales_invoice,
+                ["customer", "docstatus", "outstanding_amount", "is_return"], as_dict=True,
+            )
+            if not si or si.docstatus != 1 or si.is_return or si.customer != self.party:
+                frappe.throw(_("Строка {0}: инвойс {1} бу мижозга тегишли эмас ёки яроқсиз").format(row.idx, row.sales_invoice))
+
+            row.outstanding_amount = flt(si.outstanding_amount)
+            allocated = flt(row.allocated_amount)
+            if allocated <= 0:
+                frappe.throw(_("Строка {0}: сумма 0 дан катта бўлиши керак").format(row.idx))
+            if allocated > flt(si.outstanding_amount) + 0.005:
+                frappe.throw(_("Строка {0}: сумма инвойс қолдиғидан ({1}) ошиб кетди").format(
+                    row.idx, flt(si.outstanding_amount, 2)))
+            total += allocated
+
+        if total > flt(self.amount) + 0.005:
+            frappe.throw(_("Инвойсларга тақсимланган сумма ({0}) кассадаги суммадан ({1}) ошиб кетди").format(
+                flt(total, 2), flt(self.amount, 2)))
+
     def set_default_company(self):
         """Set default company for Перемещения if not set"""
         if self.transaction_type == "Перемещения" and not self.company:
@@ -539,3 +585,75 @@ def get_expense_accounts(doctype, txt, searchfield, start, page_len, filters):
         "page_len": page_len
     })
 
+
+@frappe.whitelist()
+def get_open_invoices(customer, company=None):
+    """Mijozning ochiq invoyslari: tovarlar xulosasi va izoh bilan (operator uchun)"""
+    frappe.has_permission("Sales Invoice", "read", throw=True)
+
+    filters = {"customer": customer, "docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
+    if company:
+        filters["company"] = company
+    invoices = frappe.get_all(
+        "Sales Invoice",
+        filters=filters,
+        fields=["name", "posting_date", "grand_total", "outstanding_amount", "custom_komment", "currency"],
+        order_by="posting_date asc, posting_time asc, name asc",
+    )
+    if not invoices:
+        return []
+
+    items = frappe.get_all(
+        "Sales Invoice Item",
+        filters={"parent": ["in", [i.name for i in invoices]]},
+        fields=["parent", "item_name", "qty"],
+        order_by="parent, idx",
+    )
+    by_invoice = {}
+    for it in items:
+        by_invoice.setdefault(it.parent, []).append(f"{it.item_name} ×{flt(it.qty):g}")
+
+    for inv in invoices:
+        inv["items_summary"] = "; ".join(by_invoice.get(inv.name, []))
+        inv["komment"] = (inv.pop("custom_komment") or "").strip()
+    return invoices
+
+
+@frappe.whitelist()
+def invoice_query(doctype, txt, searchfield, start, page_len, filters):
+    """Kassa Invoice.sales_invoice Link ro'yxati: mijozning to'lanmagan invoyslari,
+    tovarlar, qoldiq va izoh bilan. Qidiruv ID, sana, tovar va izoh bo'yicha."""
+    filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+    if not filters.get("customer"):
+        return []
+
+    exclude = set(filters.get("exclude") or [])
+    txt = (txt or "").lower().strip()
+    out = []
+    for inv in get_open_invoices(filters["customer"], filters.get("company")):
+        if inv.name in exclude:
+            continue
+        if txt and txt not in " ".join([inv.name, str(inv.posting_date), inv.items_summary, inv.komment]).lower():
+            continue
+        # Link dropdown tavsifi HTML sifatida chiqadi: <br> bilan qatorlarga bo'lamiz
+        e = frappe.utils.escape_html
+        cur = e(inv.currency or "")
+        lines = [
+            f"{e(str(inv.posting_date))} · <b>қолдиқ {flt(inv.outstanding_amount):,.2f} {cur}</b>"
+            f" (жами {flt(inv.grand_total):,.2f})",
+            e(inv.items_summary),
+        ]
+        if inv.komment:
+            lines.append(f"<i>{e(inv.komment)}</i>")
+        desc = "<br>".join(lines)
+        out.append((inv.name, desc))
+    return out[cint(start): cint(start) + cint(page_len)]
+
+
+@frappe.whitelist()
+def get_invoice_row(invoice, customer, company=None):
+    """Tanlangan invoys ma'lumotlari (jadval qatorini to'ldirish uchun)"""
+    for inv in get_open_invoices(customer, company):
+        if inv.name == invoice:
+            return inv
+    frappe.throw(_("Инвойс {0} бу мижозга тегишли эмас ёки аллақачон тўланган").format(invoice))

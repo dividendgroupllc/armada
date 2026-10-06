@@ -31,6 +31,8 @@
   "section_break_amount",
   "column_break_3",
   "amount",
+  "section_break_invoices",
+  "invoices",
   "section_break_details",
   "remarks",
   "section_break_linked",
@@ -239,6 +241,18 @@
    "options": "Kassa",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "section_break_invoices",
+   "fieldtype": "Section Break",
+   "label": "Инвойсларга тақсимлаш",
+   "depends_on": "eval:doc.transaction_type === 'Приход' && doc.party_type === 'Customer' && doc.party"
+  },
+  {
+   "fieldname": "invoices",
+   "fieldtype": "Table",
+   "label": "Инвойслар",
+   "options": "Kassa Invoice"
   }
  ],
  "index_web_pages_for_search": 1,

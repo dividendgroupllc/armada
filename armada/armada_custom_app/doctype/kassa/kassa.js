@@ -378,3 +378,209 @@ function get_party_name_field(party_type) {
     };
     return name_fields[party_type] || null;
 }
+
+
+// ── Инвойсларга тақсимлаш (Customer / Приход) ─────────────────────────────────
+frappe.ui.form.on("Kassa", {
+    refresh: function(frm) {
+        if (frm.doc.docstatus !== 0 || !frm.events.can_pick_invoices(frm)) return;
+        frm.add_custom_button(__("Инвойс танлаш"), () => frm.events.pick_invoices(frm));
+    },
+
+    party: function(frm) {
+        frm.clear_table("invoices");
+        frm.refresh_field("invoices");
+    },
+
+    transaction_type: function(frm) {
+        frm.clear_table("invoices");
+        frm.refresh_field("invoices");
+    },
+
+    can_pick_invoices: function(frm) {
+        return frm.doc.transaction_type === "Приход" && frm.doc.party_type === "Customer" && !!frm.doc.party;
+    },
+
+    pick_invoices: function(frm) {
+        if (!frm.doc.amount) {
+            frappe.msgprint(__("Аввал суммани киритинг"));
+            return;
+        }
+        frappe.call({
+            method: "armada.armada_custom_app.doctype.kassa.kassa.get_open_invoices",
+            args: { customer: frm.doc.party, company: frm.doc.company },
+            freeze: true,
+            callback: function(r) {
+                const invoices = r.message || [];
+                if (!invoices.length) {
+                    frappe.msgprint(__("Бу мижозда очиқ инвойс йўқ"));
+                    return;
+                }
+                frm.events.show_invoice_dialog(frm, invoices);
+            }
+        });
+    },
+
+    show_invoice_dialog: function(frm, invoices) {
+        const esc = frappe.utils.escape_html;
+        const total = flt(frm.doc.amount);
+        const chosen = {};  // invoice name -> allocated amount
+        (frm.doc.invoices || []).forEach(row => { chosen[row.sales_invoice] = flt(row.allocated_amount); });
+
+        const d = new frappe.ui.Dialog({
+            title: __("Инвойс танлаш — {0}", [frm.doc.party_name || frm.doc.party]),
+            size: "extra-large",
+            fields: [
+                { fieldname: "search", fieldtype: "Data", label: __("Қидирув (товар, изоҳ, сана)") },
+                { fieldname: "summary", fieldtype: "HTML" },
+                { fieldname: "list", fieldtype: "HTML" },
+            ],
+            primary_action_label: __("Қўллаш"),
+            primary_action: function() {
+                const picked = invoices.filter(i => flt(chosen[i.name]) > 0);
+                const sum = picked.reduce((a, i) => a + flt(chosen[i.name]), 0);
+                if (sum > total + 0.005) {
+                    frappe.msgprint(__("Тақсимланган сумма кассадаги суммадан ошиб кетди"));
+                    return;
+                }
+                frm.clear_table("invoices");
+                picked.forEach(i => {
+                    const row = frm.add_child("invoices");
+                    row.sales_invoice = i.name;
+                    row.posting_date = i.posting_date;
+                    row.items_summary = i.items_summary;
+                    row.komment = i.komment;
+                    row.grand_total = i.grand_total;
+                    row.outstanding_amount = i.outstanding_amount;
+                    row.allocated_amount = flt(chosen[i.name]);
+                });
+                frm.refresh_field("invoices");
+                frm.dirty();
+                d.hide();
+            },
+        });
+
+        const $list = d.fields_dict.list.$wrapper;
+        const $summary = d.fields_dict.summary.$wrapper;
+
+        const allocatedSum = () => Object.values(chosen).reduce((a, v) => a + flt(v), 0);
+        const updateSummary = () => {
+            const left = total - allocatedSum();
+            $summary.html(`<div class="text-muted" style="margin-bottom:6px">
+                ${__("Касса суммаси")}: <b>${format_currency(total)}</b> &nbsp;|&nbsp;
+                ${__("Тақсимланди")}: <b>${format_currency(allocatedSum())}</b> &nbsp;|&nbsp;
+                ${__("Қолди (аванс)")}: <b style="color:${left < -0.005 ? "#c62828" : "inherit"}">${format_currency(left)}</b>
+            </div>`);
+        };
+
+        const render = () => {
+            const q = (d.get_value("search") || "").toLowerCase().trim();
+            const rows = invoices.filter(i =>
+                !q || [i.items_summary, i.komment, i.posting_date, i.name].join(" ").toLowerCase().includes(q));
+            $list.html(`
+                <div style="max-height:55vh; overflow:auto">
+                <table class="table table-bordered table-sm" style="font-size:12px">
+                    <thead><tr>
+                        <th style="width:30px"></th><th>${__("Сана")}</th><th>${__("Товарлар")}</th>
+                        <th>${__("Изоҳ")}</th><th class="text-right">${__("Қолдиқ")}</th>
+                        <th style="width:110px">${__("Тўланаётган")}</th><th>${__("Инвойс")}</th>
+                    </tr></thead>
+                    <tbody>${rows.map(i => `
+                        <tr data-name="${esc(i.name)}">
+                            <td><input type="checkbox" class="pick" ${chosen[i.name] ? "checked" : ""}></td>
+                            <td>${esc(i.posting_date)}</td>
+                            <td>${esc(i.items_summary)}</td>
+                            <td>${esc(i.komment)}</td>
+                            <td class="text-right">${format_currency(i.outstanding_amount, i.currency)}</td>
+                            <td><input type="number" step="0.01" class="form-control input-xs amt" value="${chosen[i.name] || ""}"></td>
+                            <td class="text-muted">${esc(i.name)}</td>
+                        </tr>`).join("")}
+                    </tbody>
+                </table></div>`);
+            updateSummary();
+        };
+
+        const byName = name => invoices.find(i => i.name === name);
+
+        $list.on("change", ".pick", function() {
+            const $tr = $(this).closest("tr");
+            const inv = byName($tr.data("name"));
+            if (this.checked) {
+                const left = total - allocatedSum();
+                chosen[inv.name] = Math.max(0, Math.min(flt(inv.outstanding_amount), left));
+                $tr.find(".amt").val(chosen[inv.name] || "");
+            } else {
+                delete chosen[inv.name];
+                $tr.find(".amt").val("");
+            }
+            updateSummary();
+        });
+
+        $list.on("input", ".amt", function() {
+            const $tr = $(this).closest("tr");
+            const inv = byName($tr.data("name"));
+            let v = flt($(this).val());
+            if (v > flt(inv.outstanding_amount)) {
+                v = flt(inv.outstanding_amount);
+                $(this).val(v);
+            }
+            if (v > 0) {
+                chosen[inv.name] = v;
+                $tr.find(".pick").prop("checked", true);
+            } else {
+                delete chosen[inv.name];
+                $tr.find(".pick").prop("checked", false);
+            }
+            updateSummary();
+        });
+
+        d.fields_dict.search.df.onchange = render;
+        d.fields_dict.search.$input.on("input", frappe.utils.debounce(render, 200));
+        d.show();
+        render();
+    },
+});
+
+
+// ── Jadvaldagi "Инвойс" maydoni: bosilganda mijozning to'lanmagan invoyslari ─────
+frappe.ui.form.on("Kassa", {
+    refresh: function(frm) {
+        frm.set_query("sales_invoice", "invoices", function() {
+            return {
+                query: "armada.armada_custom_app.doctype.kassa.kassa.invoice_query",
+                filters: {
+                    customer: frm.doc.party,
+                    company: frm.doc.company,
+                    exclude: (frm.doc.invoices || []).map(r => r.sales_invoice).filter(Boolean),
+                },
+            };
+        });
+    },
+});
+
+frappe.ui.form.on("Kassa Invoice", {
+    sales_invoice: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row.sales_invoice) return;
+        frappe.call({
+            method: "armada.armada_custom_app.doctype.kassa.kassa.get_invoice_row",
+            args: { invoice: row.sales_invoice, customer: frm.doc.party, company: frm.doc.company },
+            callback: function(r) {
+                const inv = r.message;
+                if (!inv) return;
+                const others = (frm.doc.invoices || [])
+                    .filter(x => x.name !== cdn)
+                    .reduce((a, x) => a + flt(x.allocated_amount), 0);
+                const left = Math.max(0, flt(frm.doc.amount) - others);
+                frappe.model.set_value(cdt, cdn, {
+                    posting_date: inv.posting_date,
+                    items_summary: inv.items_summary,
+                    komment: inv.komment,
+                    grand_total: inv.grand_total,
+                    outstanding_amount: inv.outstanding_amount,
+                    allocated_amount: Math.min(flt(inv.outstanding_amount), left),
+                });
+            },
+        });
+    },
+});

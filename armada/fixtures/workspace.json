@@ -199,6 +199,24 @@
     "parenttype": "Workspace",
     "report_ref_doctype": null,
     "type": "Link"
+   },
+   {
+    "dependencies": null,
+    "description": null,
+    "hidden": 0,
+    "icon": null,
+    "is_query_report": 1,
+    "label": "Instagram mijozlar",
+    "link_count": 0,
+    "link_to": "Instagram Mijozlar Hisoboti",
+    "link_type": "Report",
+    "onboard": 0,
+    "only_for": null,
+    "parent": "Taminotchi",
+    "parentfield": "links",
+    "parenttype": "Workspace",
+    "report_ref_doctype": null,
+    "type": "Link"
    }
   ],
   "modified": "2026-06-03 16:09:06.611041",
