@@ -40,11 +40,12 @@ def execute(filters=None):
 def get_columns():
 	return [
 		{"label": _("Мижоз / Товар"), "fieldname": "name", "fieldtype": "Data", "width": 260},
-		{"label": _("Миқдор"), "fieldname": "qty", "fieldtype": "Float", "width": 90},
+		{"label": _("Миқдор"), "fieldname": "qty", "fieldtype": "Float", "precision": 2, "width": 90},
 		{"label": _("Сотилди"), "fieldname": "sold", "fieldtype": "Currency", "options": "currency", "width": 120},
 		{"label": _("Тўланди"), "fieldname": "paid", "fieldtype": "Currency", "options": "currency", "width": 120},
 		{"label": _("Қарз"), "fieldname": "debt", "fieldtype": "Currency", "options": "currency", "width": 120},
-		{"label": _("Тўлов %"), "fieldname": "paid_pct", "fieldtype": "Percent", "width": 80},
+		{"label": _("Тўлов %"), "fieldname": "paid_pct", "fieldtype": "Percent", "precision": 2, "width": 80},
+		{"label": _("Комментарий"), "fieldname": "comment", "fieldtype": "Small Text", "width": 320},
 		{"label": _("Валюта"), "fieldname": "currency", "fieldtype": "Data", "hidden": 1},
 	]
 
@@ -77,13 +78,14 @@ def get_data(filters):
 
 	items = frappe.db.sql(
 		f"""
-		SELECT si.customer, sii.item_code, sii.item_name,
+		SELECT si.customer, si.name AS invoice, si.posting_date, si.custom_komment AS comment,
+			sii.item_code, sii.item_name,
 			SUM(sii.qty) AS qty, SUM(sii.base_net_amount) AS sold
 		FROM `tabSales Invoice Item` sii
 		INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 		WHERE {" AND ".join(item_conditions)}
-		GROUP BY si.customer, sii.item_code, sii.item_name
-		ORDER BY si.customer, sold DESC
+		GROUP BY si.name, sii.item_code, sii.item_name
+		ORDER BY si.customer, si.posting_date, si.name, sold DESC
 		""",
 		filters,
 		as_dict=True,
@@ -118,13 +120,14 @@ def get_data(filters):
 
 	by_customer = {}
 	for row in items:
-		by_customer.setdefault(row.customer, []).append(row)
+		by_customer.setdefault(row.customer, {}).setdefault(row.invoice, []).append(row)
 
 	data = []
 	total = frappe._dict(qty=0, sold=0, paid=0, debt=0)
 	# Davrda harakati bor yoki qarzi bor mijozlar
 	for customer in sorted(customers):
-		rows = by_customer.get(customer, [])
+		invoices = by_customer.get(customer, {})
+		rows = [r for lines in invoices.values() for r in lines]
 		c_paid, c_debt = paid.get(customer) or 0, debt.get(customer) or 0
 		if not rows and not c_paid and not c_debt:
 			continue
@@ -144,18 +147,33 @@ def get_data(filters):
 				"bold": 1,
 			}
 		)
-		for r in rows:
+		for invoice, lines in invoices.items():
+			head = lines[0]
+			inv_row = f"{customer}::{invoice}"
 			data.append(
 				{
-					"name": f"{customer}::{r.item_code}",
-					"label": r.item_name,
+					"name": inv_row,
+					"label": f"{invoice} ({head.posting_date})",
 					"parent_row": customer,
 					"indent": 1,
-					"qty": r.qty,
-					"sold": r.sold,
+					"qty": sum(r.qty for r in lines),
+					"sold": sum(r.sold for r in lines),
+					"comment": (head.comment or "").strip(),
 					"currency": currency,
 				}
 			)
+			for r in lines:
+				data.append(
+					{
+						"name": f"{inv_row}::{r.item_code}",
+						"label": r.item_name,
+						"parent_row": inv_row,
+						"indent": 2,
+						"qty": r.qty,
+						"sold": r.sold,
+						"currency": currency,
+					}
+				)
 		total.qty += qty
 		total.sold += sold
 		total.paid += c_paid
