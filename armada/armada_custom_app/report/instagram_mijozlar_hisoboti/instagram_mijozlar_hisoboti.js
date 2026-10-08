@@ -64,8 +64,8 @@ frappe.query_reports["Instagram Mijozlar Hisoboti"] = {
 		if (column.fieldname === "name" && data && data.label) {
 			value = data.label;
 		}
-		// To'lov va qarz mijoz darajasida; invoys/tovar qatoriga bog'lab bo'lmaydi
-		if (data && data.parent_row && ["paid", "debt", "paid_pct"].includes(column.fieldname)) {
+		// To'lov va qarz mijoz va invoys darajasida; tovar qatoriga bog'lab bo'lmaydi
+		if (data && data.indent >= 2 && ["paid", "debt", "paid_pct"].includes(column.fieldname)) {
 			return "";
 		}
 		value = default_formatter(value, row, column, data);
