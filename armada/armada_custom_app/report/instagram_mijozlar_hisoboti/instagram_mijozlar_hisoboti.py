@@ -11,6 +11,8 @@ tovarlar, qancha puli tushgan va qancha qarz qolgan.
 - To'langan: davr ichidagi Payment Entry (GL Entry, party_type = Customer).
   To'lovlar odatda aniq invoysga bog'lanmaydi, shuning uchun Sales Invoice'ning
   outstanding_amount'i ishonchsiz — qarz GL bo'yicha mijoz balansidan olinadi.
+- Invoys qatorida: shu invoysga bog'langan Payment Entry'lar (davrdan qat'i nazar),
+  qarz = sotilgan - to'langan.
 - Qarz: "Охирги сана"гача бўлган мижоз балансы (debit - credit), davrdan oldingi
   qoldiq ham kiradi.
 
@@ -118,6 +120,23 @@ def get_data(filters):
 		)
 	)
 
+	# Invoys qatori uchun: har bir invoysga bog'langan to'lovlar (davrdan qat'i nazar)
+	invoice_names = tuple({r.invoice for r in items}) or ("",)
+	invoice_paid = dict(
+		frappe.db.sql(
+			"""
+			SELECT against_voucher, SUM(credit - debit)
+			FROM `tabGL Entry`
+			WHERE is_cancelled = 0 AND party_type = 'Customer'
+				AND voucher_type = 'Payment Entry'
+				AND against_voucher_type = 'Sales Invoice'
+				AND against_voucher IN %(invoices)s
+			GROUP BY against_voucher
+			""",
+			{"invoices": invoice_names},
+		)
+	)
+
 	by_customer = {}
 	for row in items:
 		by_customer.setdefault(row.customer, {}).setdefault(row.invoice, []).append(row)
@@ -150,6 +169,8 @@ def get_data(filters):
 		for invoice, lines in invoices.items():
 			head = lines[0]
 			inv_row = f"{customer}::{invoice}"
+			inv_sold = sum(r.sold for r in lines)
+			inv_paid = invoice_paid.get(invoice) or 0
 			data.append(
 				{
 					"name": inv_row,
@@ -157,7 +178,10 @@ def get_data(filters):
 					"parent_row": customer,
 					"indent": 1,
 					"qty": sum(r.qty for r in lines),
-					"sold": sum(r.sold for r in lines),
+					"sold": inv_sold,
+					"paid": inv_paid,
+					"debt": max(inv_sold - inv_paid, 0),
+					"paid_pct": (inv_paid / inv_sold * 100) if inv_sold > 0 else 0,
 					"comment": (head.comment or "").strip(),
 					"currency": currency,
 				}
