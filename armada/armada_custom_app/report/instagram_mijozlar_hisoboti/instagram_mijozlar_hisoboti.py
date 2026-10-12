@@ -89,7 +89,7 @@ def get_data(filters):
 		INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 		WHERE {" AND ".join(item_conditions)}
 		GROUP BY si.name, sii.item_code, sii.item_name
-		ORDER BY si.customer, si.posting_date, si.name, sold DESC
+		ORDER BY si.customer, si.posting_date DESC, si.posting_time DESC, si.name DESC, sold DESC
 		""",
 		filters,
 		as_dict=True,
