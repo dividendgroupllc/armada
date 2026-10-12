@@ -11,8 +11,10 @@ tovarlar, qancha puli tushgan va qancha qarz qolgan.
 - To'langan: davr ichidagi Payment Entry (GL Entry, party_type = Customer).
   To'lovlar odatda aniq invoysga bog'lanmaydi, shuning uchun Sales Invoice'ning
   outstanding_amount'i ishonchsiz — qarz GL bo'yicha mijoz balansidan olinadi.
-- Invoys qatorida: shu invoysga bog'langan Payment Entry'lar (davrdan qat'i nazar),
-  qarz = sotilgan - to'langan.
+- Invoys qatorida: Payment Ledger Entry bo'yicha (davrdan qat'i nazar) — shu invoysga
+  bog'langan to'lovlar, qaytarishlar va credit note JE'lar; qarz = invoys qoldig'i.
+  GL Entry ishlatilmaydi: Payment Reconciliation keyin bog'laganda GL'dagi
+  against_voucher yangilanmaydi, faqat PLE yangilanadi.
 - Qarz: "Охирги сана"гача бўлган мижоз балансы (debit - credit), davrdan oldingi
   qoldiq ham kiradi.
 
@@ -120,22 +122,25 @@ def get_data(filters):
 		)
 	)
 
-	# Invoys qatori uchun: har bir invoysga bog'langan to'lovlar (davrdan qat'i nazar)
+	# Invoys qatori uchun: har bir invoysga bog'langan to'lovlar va qoldiq (davrdan qat'i nazar)
 	invoice_names = tuple({r.invoice for r in items}) or ("",)
-	invoice_paid = dict(
-		frappe.db.sql(
+	invoice_ledger = {
+		r.invoice: r
+		for r in frappe.db.sql(
 			"""
-			SELECT against_voucher, SUM(credit - debit)
-			FROM `tabGL Entry`
-			WHERE is_cancelled = 0 AND party_type = 'Customer'
-				AND voucher_type = 'Payment Entry'
+			SELECT against_voucher_no AS invoice,
+				-SUM(CASE WHEN voucher_no != against_voucher_no THEN amount ELSE 0 END) AS paid,
+				SUM(amount) AS outstanding
+			FROM `tabPayment Ledger Entry`
+			WHERE delinked = 0 AND party_type = 'Customer'
 				AND against_voucher_type = 'Sales Invoice'
-				AND against_voucher IN %(invoices)s
-			GROUP BY against_voucher
+				AND against_voucher_no IN %(invoices)s
+			GROUP BY against_voucher_no
 			""",
 			{"invoices": invoice_names},
+			as_dict=True,
 		)
-	)
+	}
 
 	by_customer = {}
 	for row in items:
@@ -170,7 +175,8 @@ def get_data(filters):
 			head = lines[0]
 			inv_row = f"{customer}::{invoice}"
 			inv_sold = sum(r.sold for r in lines)
-			inv_paid = invoice_paid.get(invoice) or 0
+			ledger = invoice_ledger.get(invoice) or frappe._dict(paid=0, outstanding=inv_sold)
+			inv_paid = ledger.paid or 0
 			data.append(
 				{
 					"name": inv_row,
@@ -180,7 +186,7 @@ def get_data(filters):
 					"qty": sum(r.qty for r in lines),
 					"sold": inv_sold,
 					"paid": inv_paid,
-					"debt": max(inv_sold - inv_paid, 0),
+					"debt": max(ledger.outstanding or 0, 0),
 					"paid_pct": (inv_paid / inv_sold * 100) if inv_sold > 0 else 0,
 					"comment": (head.comment or "").strip(),
 					"currency": currency,
