@@ -61,6 +61,14 @@ frappe.query_reports["Instagram Mijozlar Hisoboti"] = {
 	initial_depth: 0,
 
 	formatter: function (value, row, column, data, default_formatter) {
+		const invoice_link = (invoice, text) =>
+			`<a href="/app/sales-invoice/${encodeURIComponent(invoice)}">${frappe.utils.escape_html(text)}</a>`;
+		if (column.fieldname === "name" && data && data.invoice) {
+			return invoice_link(data.invoice, data.invoice);
+		}
+		if (column.fieldname === "crm_id" && data && data.crm_links) {
+			return data.crm_links.map((l) => invoice_link(l.invoice, l.crm_id)).join(", ");
+		}
 		if (column.fieldname === "name" && data && data.label) {
 			value = data.label;
 		}

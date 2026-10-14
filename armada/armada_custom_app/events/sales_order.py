@@ -36,9 +36,18 @@ def on_sales_order_submit(doc, method=None):
     sales_invoice.set(AUTO_CREATED_FIELD, 1)
     if doc.get("custom_komment"):
         sales_invoice.set("custom_komment", doc.custom_komment)
+    if doc.get("custom_crm_id"):
+        sales_invoice.set("custom_crm_id", doc.custom_crm_id)
     sales_invoice.flags.ignore_permissions = True
     sales_invoice.insert()
     sales_invoice.submit()
+
+
+def validate_hudud(doc, method=None):
+    # Faqat saqlash/tasdiqlashda majburiy: Hudud bo'sh eski tasdiqlangan zakazlarga
+    # (update_after_submit, masalan Kassa Komment) xalaqit bermasligi kerak.
+    if doc._action in ("save", "submit") and not doc.get("custom_hudud"):
+        frappe.throw(_("Hudud tanlanmagan: Toshkent yoki Viloyat"), frappe.MandatoryError)
 
 
 def before_sales_order_cancel(doc, method=None):

@@ -43,7 +43,10 @@ def execute(filters=None):
 
 def get_columns():
 	return [
+		# Daraxt strelkasi har doim birinchi ustunda chiqadi — shuning uchun Mijoz/Tovar birinchi
 		{"label": _("Мижоз / Товар"), "fieldname": "name", "fieldtype": "Data", "width": 260},
+		{"label": _("ID"), "fieldname": "crm_id", "fieldtype": "Data", "width": 140},
+		{"label": _("Сана"), "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
 		{"label": _("Миқдор"), "fieldname": "qty", "fieldtype": "Float", "precision": 2, "width": 90},
 		{"label": _("Сотилди"), "fieldname": "sold", "fieldtype": "Currency", "options": "currency", "width": 120},
 		{"label": _("Тўланди"), "fieldname": "paid", "fieldtype": "Currency", "options": "currency", "width": 120},
@@ -82,7 +85,7 @@ def get_data(filters):
 
 	items = frappe.db.sql(
 		f"""
-		SELECT si.customer, si.name AS invoice, si.posting_date, si.custom_komment AS comment,
+		SELECT si.customer, si.name AS invoice, si.posting_date, si.custom_komment AS comment, si.custom_crm_id AS crm_id,
 			sii.item_code, sii.item_name,
 			SUM(sii.qty) AS qty, SUM(sii.base_net_amount) AS sold
 		FROM `tabSales Invoice Item` sii
@@ -157,8 +160,16 @@ def get_data(filters):
 			continue
 		qty = sum(r.qty for r in rows)
 		sold = sum(r.sold for r in rows)
+		# Mijoz qatorida har bir ID o'z invoysiga link bo'ladi (JS formatter)
+		crm_links = [
+			{"crm_id": lines[0].crm_id.strip(), "invoice": invoice}
+			for invoice, lines in invoices.items()
+			if (lines[0].crm_id or "").strip()
+		]
 		data.append(
 			{
+				"crm_id": ", ".join(link["crm_id"] for link in crm_links),
+				"crm_links": crm_links,
 				"name": customer,
 				"parent_row": None,
 				"indent": 0,
@@ -179,8 +190,12 @@ def get_data(filters):
 			inv_paid = ledger.paid or 0
 			data.append(
 				{
+					"crm_id": (head.crm_id or "").strip(),
+					"crm_links": [{"crm_id": head.crm_id.strip(), "invoice": invoice}] if (head.crm_id or "").strip() else [],
 					"name": inv_row,
-					"label": f"{invoice} ({head.posting_date})",
+					"label": invoice,
+					"invoice": invoice,
+					"posting_date": head.posting_date,
 					"parent_row": customer,
 					"indent": 1,
 					"qty": sum(r.qty for r in lines),

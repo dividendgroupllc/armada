@@ -2,8 +2,19 @@
 
 import frappe
 
-from armada.armada_custom_app.telegram.keyboards import akt_sverka_keyboard
-from armada.armada_custom_app.telegram.messages import SALES_INVOICE_SUBMITTED
+from armada.armada_custom_app.telegram.formatting import (
+    balance_line,
+    fmt_amount,
+    fmt_date,
+    fmt_qty,
+    h,
+    party_balance,
+)
+from armada.armada_custom_app.telegram.keyboards import remove_keyboard
+from armada.armada_custom_app.telegram.messages import (
+    SALES_INVOICE_ITEM,
+    SALES_INVOICE_SUBMITTED,
+)
 
 
 def on_submit(doc, method):
@@ -20,19 +31,36 @@ def on_submit(doc, method):
     except (ValueError, TypeError):
         return
 
+    items = "\n\n".join(
+        SALES_INVOICE_ITEM.format(
+            item_name=h(row.item_name or row.item_code),
+            qty=fmt_qty(row.qty, row.uom),
+            rate=fmt_amount(row.rate, doc.currency),
+        )
+        for row in doc.items
+    )
+
+    # GL yozuvlari submit paytida allaqachon yaratilgan — saldo shu hujjatni ham o'z ichiga oladi
+    company_currency = frappe.get_cached_value("Company", doc.company, "default_currency")
+    balance = party_balance("Customer", customer, doc.company)
+
     text = SALES_INVOICE_SUBMITTED.format(
-        name=doc.name,
-        grand_total=f"{doc.grand_total:,.2f}",
-        currency=doc.currency or "",
-        posting_date=doc.posting_date,
-        due_date=doc.due_date or doc.posting_date,
+        company=h(doc.company),
+        posting_date=fmt_date(doc.posting_date),
+        name=h(doc.name),
+        customer=h(doc.customer_name or customer),
+        title="↩️ Qaytarish tafsiloti:" if doc.is_return else "🤝 Sotuv tafsiloti:",
+        items=items,
+        grand_total=fmt_amount(abs(doc.grand_total), doc.currency),
+        balance_line=balance_line(balance, company_currency),
     )
 
     frappe.enqueue(
         "armada.armada_custom_app.telegram.sender.send_message",
         chat_id=chat_id,
         text=text,
-        reply_markup=akt_sverka_keyboard(),
+        reply_markup=remove_keyboard(),
         queue="short",
         is_async=True,
+        enqueue_after_commit=True,
     )

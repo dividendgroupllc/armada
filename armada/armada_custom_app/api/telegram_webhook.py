@@ -19,9 +19,8 @@ import frappe
 
 from armada.armada_custom_app.telegram.config import is_admin
 from armada.armada_custom_app.telegram.keyboards import (
-    akt_sverka_keyboard,
     admin_menu_keyboard,
-    main_menu_keyboard,
+    remove_keyboard,
 )
 from armada.armada_custom_app.telegram.messages import (
     ADMIN_BOT_STATUS,
@@ -30,7 +29,6 @@ from armada.armada_custom_app.telegram.messages import (
     ADMIN_WELCOME,
     ALREADY_LINKED,
     ASK_PHONE,
-    CHOOSE_PERIOD,
     NOT_LINKED,
     PHONE_NOT_FOUND,
     PHONE_INVALID,
@@ -56,12 +54,16 @@ def handle():
     except Exception:
         return {"ok": True}
 
+    process_update(update)
+    return {"ok": True}
+
+
+def process_update(update: dict) -> None:
+    """Bitta Telegram update'ni qayta ishlaydi (webhook va lokal polling uchun umumiy)."""
     if "message" in update:
         _on_message(update["message"])
     elif "callback_query" in update:
         _on_callback(update["callback_query"])
-
-    return {"ok": True}
 
 
 # ─── Xabar dispatcher ────────────────────────────────────────────────────────
@@ -80,14 +82,6 @@ def _on_message(message: dict) -> None:
         _cmd_start(chat_id)
         return
 
-    # Akt Sverka tugmasi
-    if text == "📊 Акт Сверки":
-        if _is_linked(chat_id):
-            send_message(chat_id, CHOOSE_PERIOD, reply_markup=akt_sverka_keyboard())
-        else:
-            send_message(chat_id, NOT_LINKED)
-        return
-
     # Telefon raqam kutilayotgan holat
     state = _get_state(chat_id)
     if state == "awaiting_phone":
@@ -96,11 +90,7 @@ def _on_message(message: dict) -> None:
 
     # Qolgan hollar
     if _is_linked(chat_id):
-        send_message(
-            chat_id,
-            "Нажмите кнопку <b>📊 Акт Сверки</b> для запроса документа.",
-            reply_markup=main_menu_keyboard(),
-        )
+        send_message(chat_id, ALREADY_LINKED, reply_markup=remove_keyboard())
     else:
         send_message(chat_id, NOT_LINKED)
 
@@ -108,22 +98,9 @@ def _on_message(message: dict) -> None:
 # ─── Callback dispatcher ─────────────────────────────────────────────────────
 
 def _on_callback(callback_query: dict) -> None:
-    chat_id = callback_query["from"]["id"]
-    data = callback_query.get("data", "")
     cq_id = callback_query["id"]
 
-    if data.startswith("aks:"):
-        period_code = data.split(":", 1)[1]
-        frappe.enqueue(
-            "armada.armada_custom_app.telegram.pdf_handler.handle_akt_sverka_callback",
-            chat_id=chat_id,
-            period_code=period_code,
-            callback_query_id=cq_id,
-            queue="long",
-            is_async=True,
-        )
-        return
-
+    # Eski xabarlardagi "aks:*" (Akt Sverka) tugmalari endi ishlamaydi
     answer_callback_query(cq_id)
 
 
@@ -132,7 +109,7 @@ def _on_callback(callback_query: dict) -> None:
 def _cmd_start(chat_id: int) -> None:
     # Allaqachon ulangan?
     if _is_linked(chat_id):
-        send_message(chat_id, ALREADY_LINKED, reply_markup=main_menu_keyboard())
+        send_message(chat_id, ALREADY_LINKED, reply_markup=remove_keyboard())
         return
 
     # Telefon raqam so'ra
@@ -176,7 +153,7 @@ def _handle_phone_input(chat_id: int, text: str) -> None:
     else:
         msg = WELCOME_SUPPLIER.format(name=display_name)
 
-    send_message(chat_id, msg, reply_markup=main_menu_keyboard())
+    send_message(chat_id, msg, reply_markup=remove_keyboard())
 
 
 def _normalize_phone(raw: str) -> str:

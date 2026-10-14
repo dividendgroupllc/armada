@@ -2,7 +2,7 @@
 
 import frappe
 
-from armada.armada_custom_app.telegram.keyboards import akt_sverka_keyboard
+from armada.armada_custom_app.telegram.keyboards import remove_keyboard
 from armada.armada_custom_app.telegram.messages import PURCHASE_INVOICE_SUBMITTED
 
 
@@ -31,7 +31,8 @@ def on_submit(doc, method):
         "armada.armada_custom_app.telegram.sender.send_message",
         chat_id=chat_id,
         text=text,
-        reply_markup=akt_sverka_keyboard(),
+        reply_markup=remove_keyboard(),
         queue="short",
         is_async=True,
+        enqueue_after_commit=True,
     )
