@@ -53,6 +53,7 @@ def get_columns():
 		{"label": _("Қарз"), "fieldname": "debt", "fieldtype": "Currency", "options": "currency", "width": 120},
 		{"label": _("Тўлов %"), "fieldname": "paid_pct", "fieldtype": "Percent", "precision": 2, "width": 80},
 		{"label": _("Комментарий"), "fieldname": "comment", "fieldtype": "Small Text", "width": 320},
+		{"label": _("Касса комментарий"), "fieldname": "kassa_comment", "fieldtype": "Small Text", "width": 260},
 		{"label": _("Валюта"), "fieldname": "currency", "fieldtype": "Data", "hidden": 1},
 	]
 
@@ -145,6 +146,24 @@ def get_data(filters):
 		)
 	}
 
+	# Kassa Komment Sales Order'da turadi (tasdiqlangandan keyin ham o'zgarishi mumkin) —
+	# invoysga ko'chirilmaydi, shu yerda zakaz orqali olinadi
+	kassa_comments = {}
+	for r in frappe.db.sql(
+		"""
+		SELECT DISTINCT sii.parent AS invoice, so.custom_kassa_komment AS comment
+		FROM `tabSales Invoice Item` sii
+		INNER JOIN `tabSales Order` so ON so.name = sii.sales_order
+		WHERE sii.parent IN %(invoices)s AND IFNULL(so.custom_kassa_komment, '') != ''
+		ORDER BY sii.parent, so.name
+		""",
+		{"invoices": invoice_names},
+		as_dict=True,
+	):
+		comment = r.comment.strip()
+		if comment and comment not in kassa_comments.setdefault(r.invoice, []):
+			kassa_comments[r.invoice].append(comment)
+
 	by_customer = {}
 	for row in items:
 		by_customer.setdefault(row.customer, {}).setdefault(row.invoice, []).append(row)
@@ -204,6 +223,7 @@ def get_data(filters):
 					"debt": max(ledger.outstanding or 0, 0),
 					"paid_pct": (inv_paid / inv_sold * 100) if inv_sold > 0 else 0,
 					"comment": (head.comment or "").strip(),
+					"kassa_comment": "; ".join(kassa_comments.get(invoice, [])),
 					"currency": currency,
 				}
 			)

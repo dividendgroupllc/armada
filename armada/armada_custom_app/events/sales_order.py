@@ -43,13 +43,6 @@ def on_sales_order_submit(doc, method=None):
     sales_invoice.submit()
 
 
-def validate_hudud(doc, method=None):
-    # Faqat saqlash/tasdiqlashda majburiy: Hudud bo'sh eski tasdiqlangan zakazlarga
-    # (update_after_submit, masalan Kassa Komment) xalaqit bermasligi kerak.
-    if doc._action in ("save", "submit") and not doc.get("custom_hudud"):
-        frappe.throw(_("Hudud tanlanmagan: Toshkent yoki Viloyat"), frappe.MandatoryError)
-
-
 def before_sales_order_cancel(doc, method=None):
     _validate_marker_field()
 
