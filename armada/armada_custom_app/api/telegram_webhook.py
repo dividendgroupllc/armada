@@ -19,6 +19,8 @@ import frappe
 
 from armada.armada_custom_app.telegram.config import is_admin
 from armada.armada_custom_app.telegram.keyboards import (
+    BTN_STATUS,
+    BTN_UNLINKED,
     admin_menu_keyboard,
     remove_keyboard,
 )
@@ -223,11 +225,11 @@ def _admin_message(chat_id: int, text: str) -> None:
         send_message(chat_id, ADMIN_WELCOME, reply_markup=admin_menu_keyboard())
         return
 
-    if text == "👥 Контрагенты без Telegram":
+    if text == BTN_UNLINKED:
         _admin_unlinked(chat_id)
         return
 
-    if text == "ℹ️ Статус бота":
+    if text == BTN_STATUS:
         _admin_status(chat_id)
         return
 

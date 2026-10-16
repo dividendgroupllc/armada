@@ -12,6 +12,7 @@ from armada.armada_custom_app.telegram.formatting import (
 )
 from armada.armada_custom_app.telegram.keyboards import remove_keyboard
 from armada.armada_custom_app.telegram.messages import (
+    SALES_INVOICE_COMMENT,
     SALES_INVOICE_ITEM,
     SALES_INVOICE_SUBMITTED,
 )
@@ -40,12 +41,15 @@ def on_submit(doc, method):
         for row in doc.items
     )
 
+    comment = _sales_order_comment(doc)
+    if comment:
+        items += "\n\n" + SALES_INVOICE_COMMENT.format(comment=h(comment))
+
     # GL yozuvlari submit paytida allaqachon yaratilgan — saldo shu hujjatni ham o'z ichiga oladi
     company_currency = frappe.get_cached_value("Company", doc.company, "default_currency")
     balance = party_balance("Customer", customer, doc.company)
 
     text = SALES_INVOICE_SUBMITTED.format(
-        company=h(doc.company),
         posting_date=fmt_date(doc.posting_date),
         name=h(doc.name),
         customer=h(doc.customer_name or customer),
@@ -64,3 +68,16 @@ def on_submit(doc, method):
         is_async=True,
         enqueue_after_commit=True,
     )
+
+
+def _sales_order_comment(doc) -> str:
+    """Hujjat bog'langan Sales Order(lar)ning custom_komment maydoni."""
+    sales_orders = list(dict.fromkeys(row.sales_order for row in doc.items if row.sales_order))
+    if not sales_orders:
+        return ""
+    comments = frappe.get_all(
+        "Sales Order",
+        filters={"name": ["in", sales_orders]},
+        pluck="custom_komment",
+    )
+    return "; ".join(dict.fromkeys(c.strip() for c in comments if c and c.strip()))

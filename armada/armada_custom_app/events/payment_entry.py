@@ -40,7 +40,6 @@ def _customer_text(doc, title: str, amount_label: str) -> str:
     balance = party_balance("Customer", doc.party, doc.company)
 
     return CUSTOMER_PAYMENT.format(
-        company=h(doc.company),
         posting_date=fmt_date(doc.posting_date),
         name=h(doc.name),
         customer=h(doc.party_name or doc.party),

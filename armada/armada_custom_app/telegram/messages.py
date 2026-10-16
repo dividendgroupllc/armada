@@ -1,47 +1,50 @@
-"""Russian message templates for all bot scenarios."""
+"""Botning barcha xabar shablonlari (o'zbek tilida)."""
+
+# Xabarlarda ko'rinadigan brend nomi (ERPNext'dagi Company nomidan qat'i nazar)
+BRAND_NAME = "HALOVAT MATRAS"
 
 # ─── Onboarding ───────────────────────────────────────────────────────────────
 
 WELCOME_CUSTOMER = (
-    "👋 Добро пожаловать, <b>{name}</b>!\n\n"
-    "Вы успешно подключились как <b>Клиент</b>.\n\n"
-    "Вы будете получать уведомления о:\n"
-    "• 📄 Выставленных счетах-фактурах\n"
-    "• 💳 Поступлениях платежей"
+    "👋 Xush kelibsiz, <b>{name}</b>!\n\n"
+    "Siz <b>Mijoz</b> sifatida muvaffaqiyatli ulandingiz.\n\n"
+    "Sizga quyidagilar haqida xabar keladi:\n"
+    "• 📄 Rasmiylashtirilgan savdo hujjatlari\n"
+    "• 💳 Qabul qilingan to'lovlar"
 )
 
 WELCOME_SUPPLIER = (
-    "👋 Добро пожаловать, <b>{name}</b>!\n\n"
-    "Вы успешно подключились как <b>Поставщик</b>.\n\n"
-    "Вы будете получать уведомления о:\n"
-    "• 📦 Подтверждённых счетах на закупку\n"
-    "• 💳 Произведённых платежах"
+    "👋 Xush kelibsiz, <b>{name}</b>!\n\n"
+    "Siz <b>Yetkazib beruvchi</b> sifatida muvaffaqiyatli ulandingiz.\n\n"
+    "Sizga quyidagilar haqida xabar keladi:\n"
+    "• 📦 Tasdiqlangan xarid hujjatlari\n"
+    "• 💳 Amalga oshirilgan to'lovlar"
 )
 
 ALREADY_LINKED = (
-    "✅ Ваш аккаунт уже подключён.\n\n"
-    "Уведомления о счетах и платежах будут приходить сюда."
+    "✅ Hisobingiz allaqachon ulangan.\n\n"
+    "Hujjatlar va to'lovlar haqidagi xabarlar shu yerga keladi."
 )
 
 NOT_LINKED = (
-    "🔒 Ваш аккаунт не подключён.\n\n"
-    "Отправьте /start для регистрации."
+    "🔒 Hisobingiz ulanmagan.\n\n"
+    "Ro'yxatdan o'tish uchun /start yuboring."
 )
 
 ASK_PHONE = (
-    "📱 Введите ваш номер телефона для входа в систему:\n\n"
-    "Пример: <code>+998901234567</code>"
+    "📱 Tizimga kirish uchun telefon raqamingizni kiriting:\n\n"
+    "Namuna: <code>+998901234567</code>"
 )
 
 PHONE_INVALID = (
-    "❌ Неверный формат номера.\n\n"
-    "Введите номер в формате: <code>+998901234567</code>"
+    "❌ Raqam formati noto'g'ri.\n\n"
+    "Raqamni quyidagi formatda kiriting: <code>+998901234567</code>"
 )
 
 PHONE_NOT_FOUND = (
-    "❌ Номер телефона не найден в системе.\n\n"
-    "Убедитесь, что номер совпадает с тем, который указан у менеджера.\n"
-    "Попробуйте ещё раз или обратитесь к менеджеру."
+    "❌ Telefon raqam tizimda topilmadi.\n\n"
+    "Raqam menejerda ko'rsatilgan raqam bilan bir xil ekanligini tekshiring.\n"
+    "Qaytadan urinib ko'ring yoki menejerga murojaat qiling."
 )
 
 # ─── Notifications: Customer ──────────────────────────────────────────────────
@@ -49,7 +52,7 @@ PHONE_NOT_FOUND = (
 _LINE = "━━━━━━━━━━━━━━━━━━"
 
 SALES_INVOICE_SUBMITTED = (
-    "<b>{company}</b>\n"
+    f"<b>{BRAND_NAME}</b>\n"
     f"{_LINE}\n"
     "📅 Sana: {posting_date}\n"
     "🧾 Hujjat: #{name}\n"
@@ -67,8 +70,10 @@ SALES_INVOICE_ITEM = (
     "🏷️ Narx: {rate}"
 )
 
+SALES_INVOICE_COMMENT = "📝 Izohi: {comment}"
+
 CUSTOMER_PAYMENT = (
-    "<b>{company}</b>\n"
+    f"<b>{BRAND_NAME}</b>\n"
     f"{_LINE}\n"
     "📅 Sana: {posting_date}\n"
     "🧾 Hujjat raqami: #{name}\n"
@@ -82,53 +87,52 @@ CUSTOMER_PAYMENT = (
 # ─── Notifications: Supplier ─────────────────────────────────────────────────
 
 PURCHASE_INVOICE_SUBMITTED = (
-    "📦 <b>Счёт на закупку подтверждён</b>\n\n"
-    "Номер: <code>{name}</code>\n"
-    "Сумма: <b>{grand_total} {currency}</b>\n"
-    "Дата: {posting_date}"
+    "📦 <b>Xarid hujjati tasdiqlandi</b>\n\n"
+    "Raqam: <code>{name}</code>\n"
+    "Summa: <b>{grand_total} {currency}</b>\n"
+    "Sana: {posting_date}"
 )
 
 # ─── Notifications: Payment Entry (both parties) ─────────────────────────────
 
 PAYMENT_RECEIVED = (
-    "💳 <b>Получена оплата</b>\n\n"
-    "Номер: <code>{name}</code>\n"
-    "Сумма: <b>{paid_amount} {currency}</b>\n"
-    "Дата: {posting_date}"
+    "💳 <b>To'lov qabul qilindi</b>\n\n"
+    "Raqam: <code>{name}</code>\n"
+    "Summa: <b>{paid_amount} {currency}</b>\n"
+    "Sana: {posting_date}"
 )
 
 PAYMENT_SENT = (
-    "💸 <b>Оплата произведена</b>\n\n"
-    "Номер: <code>{name}</code>\n"
-    "Сумма: <b>{paid_amount} {currency}</b>\n"
-    "Дата: {posting_date}"
+    "💸 <b>To'lov amalga oshirildi</b>\n\n"
+    "Raqam: <code>{name}</code>\n"
+    "Summa: <b>{paid_amount} {currency}</b>\n"
+    "Sana: {posting_date}"
 )
 
 PAYMENT_CANCELLED = (
-    "❌ <b>Платёж отменён</b>\n\n"
-    "Номер: <code>{name}</code>\n"
-    "Сумма: <b>{paid_amount} {currency}</b>"
+    "❌ <b>To'lov bekor qilindi</b>\n\n"
+    "Raqam: <code>{name}</code>\n"
+    "Summa: <b>{paid_amount} {currency}</b>"
 )
 
 # ─── Admin ────────────────────────────────────────────────────────────────────
 
 ADMIN_WELCOME = (
-    "👨‍💼 <b>Панель администратора</b>\n\n"
-    "Выберите действие из меню ниже."
+    "👨‍💼 <b>Administrator paneli</b>\n\n"
+    "Quyidagi menyudan amalni tanlang."
 )
 
 ADMIN_BOT_STATUS = (
-    "ℹ️ <b>Статус бота</b>\n\n"
+    "ℹ️ <b>Bot holati</b>\n\n"
     "🤖 Username: @{username}\n"
     "🆔 Bot ID: <code>{bot_id}</code>\n"
-    "👥 Клиентов подключено: <b>{customers}</b>\n"
-    "🏭 Поставщиков подключено: <b>{suppliers}</b>"
+    "👥 Ulangan mijozlar: <b>{customers}</b>\n"
+    "🏭 Ulangan yetkazib beruvchilar: <b>{suppliers}</b>"
 )
 
-ADMIN_NO_UNLINKED = "✅ Все контрагенты подключены к Telegram!"
+ADMIN_NO_UNLINKED = "✅ Barcha kontragentlar Telegram'ga ulangan!"
 
 ADMIN_UNLINKED_LIST = (
-    "📋 <b>Без Telegram ({count})</b>\n\n"
+    "📋 <b>Telegram'siz ({count})</b>\n\n"
     "{list}"
 )
-
