@@ -136,3 +136,72 @@ ADMIN_UNLINKED_LIST = (
     "📋 <b>Telegram'siz ({count})</b>\n\n"
     "{list}"
 )
+
+ADMIN_PROMO_ASK = (
+    "📢 <b>Aksiya yuborish</b>\n\n"
+    "Barcha mijozlarga yuboriladigan e'lonni yozing.\n"
+    "Matn yoki bitta rasm/video (izohi bilan) yuborishingiz mumkin."
+)
+
+ADMIN_PROMO_CONFIRM = (
+    "☝️ Yuqoridagi xabar <b>{count}</b> ta mijozga yuboriladi.\n\n"
+    "Tasdiqlaysizmi?"
+)
+
+ADMIN_PROMO_STARTED = "⏳ Aksiya {count} ta mijozga yuborilmoqda..."
+
+ADMIN_PROMO_DONE = (
+    "✅ <b>Aksiya yuborildi</b>\n\n"
+    "Yetkazildi: <b>{sent}</b>\n"
+    "Yetkazilmadi: <b>{failed}</b> (botni bloklagan yoki o'chirgan)"
+)
+
+ADMIN_PROMO_CANCELLED = "❌ Aksiya bekor qilindi."
+
+ADMIN_PROMO_NO_USERS = "Botga ulangan mijozlar yo'q."
+
+ADMIN_CANCELLED = "Bekor qilindi."
+
+# ─── Muammo va takliflar ─────────────────────────────────────────────────────
+
+FEEDBACK_ASK = (
+    "💬 <b>Muammo va takliflar</b>\n\n"
+    "Muammo yoki taklifingizni yozib yuboring — xabaringiz rahbariyatga yetkaziladi.\n"
+    "Rasm yoki video ham yuborishingiz mumkin."
+)
+
+FEEDBACK_RECEIVED = (
+    "✅ Murojaatingiz qabul qilindi (<code>{name}</code>).\n\n"
+    "Javob shu yerga keladi."
+)
+
+FEEDBACK_UNSUPPORTED = "Iltimos, xabarni matn, rasm yoki video ko'rinishida yuboring."
+
+FEEDBACK_CANCELLED = "Bekor qilindi."
+
+# Admin'ga keladigan murojaat sarlavhasi. "🆔 {name}" qatori orqali admin
+# reply qilganda javob qaysi userga ketishi aniqlanadi — o'zgartirmang.
+FEEDBACK_TO_ADMIN = (
+    "📩 <b>Yangi murojaat</b>\n"
+    "🆔 {name}\n"
+    "👤 {party_label}: {party_name}\n"
+    "📱 {phone}\n"
+    f"{_LINE}\n"
+    "{body}\n"
+    f"{_LINE}\n"
+    "<i>Javob berish uchun shu xabarga Reply qiling.</i>"
+)
+
+FEEDBACK_REPLY_TO_USER = (
+    f"💬 <b>{BRAND_NAME}</b> javobi:\n\n"
+    "{body}"
+)
+
+ADMIN_REPLY_SENT = "✅ Javob {party_name} ga yuborildi."
+
+ADMIN_REPLY_FAILED = "❌ Javob yetkazilmadi — user botni bloklagan bo'lishi mumkin."
+
+ADMIN_REPLY_UNKNOWN = (
+    "Bu xabar murojaat emas. Javob berish uchun "
+    "\"📩 Yangi murojaat\" xabariga Reply qiling."
+)

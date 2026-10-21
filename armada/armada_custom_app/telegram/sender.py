@@ -39,6 +39,53 @@ def send_message(
         return False
 
 
+def copy_message(
+    chat_id: int,
+    from_chat_id: int,
+    message_id: int,
+    caption: Optional[str] = None,
+    reply_markup: Optional[dict] = None,
+    log_errors: bool = True,
+) -> bool:
+    """Xabarni (matn, rasm, video...) "Forwarded" belgisisiz boshqa chatga nusxalaydi.
+
+    caption berilsa — media xabarning izohi shu matn bilan almashtiriladi.
+    """
+    if not is_bot_active():
+        return False
+    payload = {
+        "chat_id": chat_id,
+        "from_chat_id": from_chat_id,
+        "message_id": message_id,
+    }
+    if caption is not None:
+        payload["caption"] = caption
+        payload["parse_mode"] = "HTML"
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+
+    try:
+        r = requests.post(_url("copyMessage"), json=payload, timeout=10)
+        if not r.ok and log_errors:
+            frappe.log_error(r.text, f"Telegram copyMessage Error (chat_id={chat_id})")
+        return r.ok
+    except Exception as e:
+        if log_errors:
+            frappe.log_error(str(e), f"Telegram copyMessage Exception (chat_id={chat_id})")
+        return False
+
+
+def edit_message_reply_markup(chat_id: int, message_id: int, reply_markup: Optional[dict] = None) -> None:
+    """Inline tugmalarni o'zgartiradi (reply_markup=None — tugmalarni olib tashlaydi)."""
+    payload = {"chat_id": chat_id, "message_id": message_id}
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    try:
+        requests.post(_url("editMessageReplyMarkup"), json=payload, timeout=5)
+    except Exception:
+        pass
+
+
 def send_document(
     chat_id: int,
     file_bytes: bytes,

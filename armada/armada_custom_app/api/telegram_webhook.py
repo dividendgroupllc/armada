@@ -14,34 +14,83 @@ Webhook ro'yxatdan o'tkazish:
 
 import json
 import re
+from html import escape
 
 import frappe
 
-from armada.armada_custom_app.telegram.config import is_admin
+from armada.armada_custom_app.telegram.config import get_admin_chat_ids, is_admin
 from armada.armada_custom_app.telegram.keyboards import (
+    BTN_CANCEL,
+    BTN_FEEDBACK,
+    BTN_PROMO,
     BTN_STATUS,
     BTN_UNLINKED,
+    CB_PROMO_CANCEL,
+    CB_PROMO_SEND,
     admin_menu_keyboard,
-    remove_keyboard,
+    cancel_keyboard,
+    promo_confirm_keyboard,
+    user_menu_keyboard,
 )
 from armada.armada_custom_app.telegram.messages import (
     ADMIN_BOT_STATUS,
+    ADMIN_CANCELLED,
     ADMIN_NO_UNLINKED,
+    ADMIN_PROMO_ASK,
+    ADMIN_PROMO_CANCELLED,
+    ADMIN_PROMO_CONFIRM,
+    ADMIN_PROMO_NO_USERS,
+    ADMIN_PROMO_STARTED,
+    ADMIN_REPLY_FAILED,
+    ADMIN_REPLY_SENT,
+    ADMIN_REPLY_UNKNOWN,
     ADMIN_UNLINKED_LIST,
     ADMIN_WELCOME,
     ALREADY_LINKED,
     ASK_PHONE,
+    FEEDBACK_ASK,
+    FEEDBACK_CANCELLED,
+    FEEDBACK_RECEIVED,
+    FEEDBACK_REPLY_TO_USER,
+    FEEDBACK_TO_ADMIN,
+    FEEDBACK_UNSUPPORTED,
     NOT_LINKED,
     PHONE_NOT_FOUND,
     PHONE_INVALID,
     WELCOME_CUSTOMER,
     WELCOME_SUPPLIER,
 )
-from armada.armada_custom_app.telegram.sender import answer_callback_query, get_me, send_message
+from armada.armada_custom_app.telegram.promo import get_recipients
+from armada.armada_custom_app.telegram.sender import (
+    answer_callback_query,
+    copy_message,
+    edit_message_reply_markup,
+    get_me,
+    send_message,
+)
 
 # Cache key prefix — foydalanuvchi holatini saqlash uchun (5 daqiqa)
 _STATE_PREFIX = "tg_state:"
 _STATE_TTL = 300
+# Murojaat/aksiya matnini yozish uchun ko'proq vaqt beriladi
+_INPUT_TTL = 900
+
+_ST_FEEDBACK = "awaiting_feedback"
+_ST_PROMO = "awaiting_promo"
+
+# Albom (bir nechta rasm) bitta murojaatga biriktiriladi
+_MEDIA_GROUP_PREFIX = "tg_mg:"
+_MEDIA_GROUP_TTL = 120
+# Aksiya tasdiqlash tugmasini ikki marta bosishdan himoya
+_PROMO_DONE_PREFIX = "tg_promo_sent:"
+
+# Admin xabaridagi murojaat raqami ("🆔 MRJ-00001")
+_FEEDBACK_ID_RE = re.compile(r"MRJ-\d+")
+
+# Izoh (caption) qo'yish mumkin bo'lgan media turlari
+_CAPTION_TYPES = ("photo", "video", "document", "audio", "voice", "animation")
+_TEXT_LIMIT = 3500
+_CAPTION_LIMIT = 700
 
 
 @frappe.whitelist(allow_guest=True)
@@ -76,7 +125,7 @@ def _on_message(message: dict) -> None:
 
     # Admin alohida oqim
     if is_admin(chat_id):
-        _admin_message(chat_id, text)
+        _admin_message(message)
         return
 
     # /start
@@ -90,17 +139,25 @@ def _on_message(message: dict) -> None:
         _handle_phone_input(chat_id, text)
         return
 
-    # Qolgan hollar
-    if _is_linked(chat_id):
-        send_message(chat_id, ALREADY_LINKED, reply_markup=remove_keyboard())
-    else:
+    party = _find_party_by_chat_id(str(chat_id))
+    if not party:
         send_message(chat_id, NOT_LINKED)
+        return
+
+    _user_message(message, party)
 
 
 # ─── Callback dispatcher ─────────────────────────────────────────────────────
 
 def _on_callback(callback_query: dict) -> None:
     cq_id = callback_query["id"]
+    data = callback_query.get("data") or ""
+    message = callback_query.get("message") or {}
+    chat_id = message.get("chat", {}).get("id")
+
+    if chat_id and is_admin(chat_id) and data.startswith("promo:"):
+        _admin_promo_callback(cq_id, chat_id, message["message_id"], data)
+        return
 
     # Eski xabarlardagi "aks:*" (Akt Sverka) tugmalari endi ishlamaydi
     answer_callback_query(cq_id)
@@ -111,7 +168,8 @@ def _on_callback(callback_query: dict) -> None:
 def _cmd_start(chat_id: int) -> None:
     # Allaqachon ulangan?
     if _is_linked(chat_id):
-        send_message(chat_id, ALREADY_LINKED, reply_markup=remove_keyboard())
+        _clear_state(chat_id)
+        send_message(chat_id, ALREADY_LINKED, reply_markup=user_menu_keyboard())
         return
 
     # Telefon raqam so'ra
@@ -155,7 +213,7 @@ def _handle_phone_input(chat_id: int, text: str) -> None:
     else:
         msg = WELCOME_SUPPLIER.format(name=display_name)
 
-    send_message(chat_id, msg, reply_markup=remove_keyboard())
+    send_message(chat_id, msg, reply_markup=user_menu_keyboard())
 
 
 def _normalize_phone(raw: str) -> str:
@@ -218,11 +276,116 @@ def _find_party_by_phone(phone: str):
     return None
 
 
+# ─── Muammo va takliflar (ulangan user) ─────────────────────────────────────
+
+def _user_message(message: dict, party: tuple) -> None:
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "").strip()
+
+    if text == BTN_FEEDBACK:
+        _set_state(chat_id, _ST_FEEDBACK, _INPUT_TTL)
+        send_message(chat_id, FEEDBACK_ASK, reply_markup=cancel_keyboard())
+        return
+
+    if text == BTN_CANCEL:
+        _clear_state(chat_id)
+        send_message(chat_id, FEEDBACK_CANCELLED, reply_markup=user_menu_keyboard())
+        return
+
+    if _get_state(chat_id) == _ST_FEEDBACK:
+        _handle_feedback(message, party)
+        return
+
+    # Albomning qolgan rasmlari — oldingi murojaatga qo'shiladi
+    group_id = message.get("media_group_id")
+    feedback_name = group_id and frappe.cache().get_value(f"{_MEDIA_GROUP_PREFIX}{group_id}", expires=True)
+    if feedback_name:
+        _forward_feedback_to_admins(message, feedback_name, party)
+        return
+
+    send_message(chat_id, ALREADY_LINKED, reply_markup=user_menu_keyboard())
+
+
+def _handle_feedback(message: dict, party: tuple) -> None:
+    chat_id = message["chat"]["id"]
+    body = _message_body(message)
+    if body is None:
+        send_message(chat_id, FEEDBACK_UNSUPPORTED, reply_markup=cancel_keyboard())
+        return
+
+    party_type, party_name, display_name = party
+    doc = frappe.get_doc({
+        "doctype": "Telegram Murojaat",
+        "chat_id": str(chat_id),
+        "party_type": party_type,
+        "party": party_name,
+        "party_name": display_name,
+        "message": body or "[media]",
+    }).insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    _clear_state(chat_id)
+    group_id = message.get("media_group_id")
+    if group_id:
+        frappe.cache().set_value(
+            f"{_MEDIA_GROUP_PREFIX}{group_id}", doc.name, expires_in_sec=_MEDIA_GROUP_TTL
+        )
+
+    _forward_feedback_to_admins(message, doc.name, party)
+    send_message(
+        chat_id,
+        FEEDBACK_RECEIVED.format(name=doc.name),
+        reply_markup=user_menu_keyboard(),
+    )
+
+
+def _forward_feedback_to_admins(message: dict, feedback_name: str, party: tuple) -> None:
+    party_type, party_name, display_name = party
+    phone = frappe.db.get_value(party_type, party_name, "contact_number") or "—"
+    template = FEEDBACK_TO_ADMIN.format(
+        name=feedback_name,
+        party_label="Mijoz" if party_type == "Customer" else "Yetkazib beruvchi",
+        party_name=escape(display_name or party_name),
+        phone=escape(phone),
+        body="{body}",
+    )
+    for admin_chat_id in get_admin_chat_ids():
+        _relay(admin_chat_id, message, template)
+
+
 # ─── Admin handlers ───────────────────────────────────────────────────────────
 
-def _admin_message(chat_id: int, text: str) -> None:
+def _admin_message(message: dict) -> None:
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "").strip()
+
     if text in ("/start", "/admin"):
+        _clear_state(chat_id)
         send_message(chat_id, ADMIN_WELCOME, reply_markup=admin_menu_keyboard())
+        return
+
+    if text == BTN_CANCEL:
+        _clear_state(chat_id)
+        send_message(chat_id, ADMIN_CANCELLED, reply_markup=admin_menu_keyboard())
+        return
+
+    # Murojaatga Reply — javob userga yuboriladi
+    reply_to = message.get("reply_to_message")
+    if reply_to and _feedback_id(reply_to):
+        _admin_reply(message, _feedback_id(reply_to))
+        return
+
+    if _get_state(chat_id) == _ST_PROMO:
+        _admin_promo_preview(message)
+        return
+
+    if text == BTN_PROMO:
+        _set_state(chat_id, _ST_PROMO, _INPUT_TTL)
+        send_message(chat_id, ADMIN_PROMO_ASK, reply_markup=cancel_keyboard())
+        return
+
+    if reply_to:
+        send_message(chat_id, ADMIN_REPLY_UNKNOWN)
         return
 
     if text == BTN_UNLINKED:
@@ -288,14 +451,130 @@ def _admin_status(chat_id: int) -> None:
     )
 
 
+def _admin_reply(message: dict, feedback_name: str) -> None:
+    chat_id = message["chat"]["id"]
+    doc = frappe.db.get_value(
+        "Telegram Murojaat", feedback_name, ["name", "chat_id", "party_name", "reply"], as_dict=True
+    )
+    if not doc or not doc.chat_id:
+        send_message(chat_id, ADMIN_REPLY_UNKNOWN)
+        return
+
+    if not _relay(int(doc.chat_id), message, FEEDBACK_REPLY_TO_USER):
+        send_message(chat_id, ADMIN_REPLY_FAILED)
+        return
+
+    admin_name = frappe.db.get_value(
+        "Telegram Admin",
+        {"parenttype": "Telegram Bot Settings", "chat_id": str(chat_id)},
+        "name_label",
+    )
+    reply = _message_body(message) or "[media]"
+    frappe.db.set_value(
+        "Telegram Murojaat",
+        doc.name,
+        {
+            "status": "Javob berildi",
+            "reply": f"{doc.reply}\n\n{reply}" if doc.reply else reply,
+            "replied_by": admin_name or str(chat_id),
+        },
+    )
+    frappe.db.commit()
+    send_message(chat_id, ADMIN_REPLY_SENT.format(party_name=escape(doc.party_name or "")))
+
+
+def _admin_promo_preview(message: dict) -> None:
+    chat_id = message["chat"]["id"]
+    _clear_state(chat_id)
+
+    if _message_body(message) is None:
+        send_message(chat_id, FEEDBACK_UNSUPPORTED, reply_markup=admin_menu_keyboard())
+        return
+
+    count = len(get_recipients())
+    if not count:
+        send_message(chat_id, ADMIN_PROMO_NO_USERS, reply_markup=admin_menu_keyboard())
+        return
+
+    # Reply klaviaturani menyuga qaytaramiz, so'ng inline tasdiqlash
+    send_message(chat_id, "👇", reply_markup=admin_menu_keyboard())
+    send_message(
+        chat_id,
+        ADMIN_PROMO_CONFIRM.format(count=count),
+        reply_markup=promo_confirm_keyboard(message["message_id"]),
+    )
+
+
+def _admin_promo_callback(cq_id: str, chat_id: int, confirm_message_id: int, data: str) -> None:
+    edit_message_reply_markup(chat_id, confirm_message_id)
+
+    if data == CB_PROMO_CANCEL:
+        answer_callback_query(cq_id)
+        send_message(chat_id, ADMIN_PROMO_CANCELLED)
+        return
+
+    promo_message_id = int(data.removeprefix(CB_PROMO_SEND))
+    done_key = f"{_PROMO_DONE_PREFIX}{chat_id}:{promo_message_id}"
+    if frappe.cache().get_value(done_key, expires=True):
+        answer_callback_query(cq_id, "Allaqachon yuborilgan")
+        return
+    frappe.cache().set_value(done_key, 1, expires_in_sec=86400)
+
+    answer_callback_query(cq_id)
+    send_message(chat_id, ADMIN_PROMO_STARTED.format(count=len(get_recipients())))
+    frappe.enqueue(
+        "armada.armada_custom_app.telegram.promo.broadcast",
+        admin_chat_id=chat_id,
+        message_id=promo_message_id,
+        queue="long",
+        timeout=3600,
+    )
+
+
+# ─── Xabar nusxalash yordamchilari ───────────────────────────────────────────
+
+def _message_body(message: dict):
+    """Xabar matni yoki media izohi. Qo'llab-quvvatlanmaydigan tur bo'lsa — None."""
+    if message.get("text"):
+        return message["text"]
+    if any(k in message for k in _CAPTION_TYPES):
+        return message.get("caption") or ""
+    return None
+
+
+def _relay(to_chat_id: int, message: dict, template: str) -> bool:
+    """Xabarni sarlavha (template, "{body}" joyi bilan) qo'shib boshqa chatga yuboradi.
+
+    Matn — send_message, media — copy_message (izohi sarlavha bilan almashtiriladi).
+    """
+    if message.get("text"):
+        body = escape(message["text"][:_TEXT_LIMIT])
+        return send_message(to_chat_id, template.format(body=body))
+
+    from_chat_id = message["chat"]["id"]
+    message_id = message["message_id"]
+    if any(k in message for k in _CAPTION_TYPES):
+        body = escape((message.get("caption") or "📎")[:_CAPTION_LIMIT])
+        return copy_message(to_chat_id, from_chat_id, message_id, caption=template.format(body=body))
+
+    # Stiker va h.k. — izoh qo'yib bo'lmaydi, sarlavha alohida ketadi
+    send_message(to_chat_id, template.format(body="📎"))
+    return copy_message(to_chat_id, from_chat_id, message_id)
+
+
+def _feedback_id(message: dict):
+    match = _FEEDBACK_ID_RE.search(message.get("text") or message.get("caption") or "")
+    return match.group(0) if match else None
+
+
 # ─── Holat (state) boshqaruvi — Redis cache ───────────────────────────────────
 
-def _set_state(chat_id: int, state: str) -> None:
-    frappe.cache().set_value(f"{_STATE_PREFIX}{chat_id}", state, expires_in_sec=_STATE_TTL)
+def _set_state(chat_id: int, state: str, ttl: int = _STATE_TTL) -> None:
+    frappe.cache().set_value(f"{_STATE_PREFIX}{chat_id}", state, expires_in_sec=ttl)
 
 
 def _get_state(chat_id: int) -> str:
-    return frappe.cache().get_value(f"{_STATE_PREFIX}{chat_id}") or ""
+    return frappe.cache().get_value(f"{_STATE_PREFIX}{chat_id}", expires=True) or ""
 
 
 def _clear_state(chat_id: int) -> None:

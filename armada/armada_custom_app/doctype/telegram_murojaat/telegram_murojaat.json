@@ -1,0 +1,108 @@
+{
+ "actions": [],
+ "autoname": "format:MRJ-{#####}",
+ "creation": "2026-10-21 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "party_type",
+  "party",
+  "party_name",
+  "chat_id",
+  "sb_message",
+  "message",
+  "sb_reply",
+  "reply",
+  "replied_by"
+ ],
+ "fields": [
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Holat",
+   "options": "Yangi\nJavob berildi",
+   "default": "Yangi"
+  },
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Link",
+   "label": "Kontragent turi",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "in_standard_filter": 1,
+   "label": "Kontragent",
+   "options": "party_type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "party_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ismi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "chat_id",
+   "fieldtype": "Data",
+   "label": "Telegram Chat ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_message",
+   "fieldtype": "Section Break",
+   "label": "Murojaat"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Xabar",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_reply",
+   "fieldtype": "Section Break",
+   "label": "Javob"
+  },
+  {
+   "fieldname": "reply",
+   "fieldtype": "Small Text",
+   "label": "Admin javobi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "replied_by",
+   "fieldtype": "Data",
+   "label": "Javob bergan admin",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-21 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Armada Custom App",
+ "name": "Telegram Murojaat",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "export": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "title_field": "party_name",
+ "track_changes": 1
+}
