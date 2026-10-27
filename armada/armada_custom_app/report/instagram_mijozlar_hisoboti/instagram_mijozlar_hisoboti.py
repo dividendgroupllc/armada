@@ -11,15 +11,15 @@ tovarlar, qancha puli tushgan va qancha qarz qolgan.
 - To'langan: davr ichidagi Payment Entry (GL Entry, party_type = Customer).
   To'lovlar odatda aniq invoysga bog'lanmaydi, shuning uchun Sales Invoice'ning
   outstanding_amount'i ishonchsiz — qarz GL bo'yicha mijoz balansidan olinadi.
-- Invoys qatorida: Payment Ledger Entry bo'yicha (davrdan qat'i nazar) — shu invoysga
+- Invoys qatorida: Payment Ledger Entry bo'yicha ("Охирги сана"гача) — shu invoysga
   bog'langan to'lovlar, qaytarishlar va credit note JE'lar; qarz = invoys qoldig'i.
+  Invoysga bog'lanmagan to'lov/kreditlar eng eski invoyslardan boshlab FIFO yopadi.
   GL Entry ishlatilmaydi: Payment Reconciliation keyin bog'laganda GL'dagi
   against_voucher yangilanmaydi, faqat PLE yangilanadi.
 - Qarz: "Охирги сана"гача бўлган мижоз балансы (debit - credit), davrdan oldingi
   qoldiq ham kiradi.
-- "Қарз" filtri berilsa: mijozning GL qarzi invoyslarga FIFO bo'yicha taqsimlanadi
-  (to'lovlar eski invoyslarni yopadi) va faqat qarzi shu summadan katta invoyslar chiqadi;
-  mijoz qatori shu invoyslar yig'indisi bo'ladi.
+- "Қарз" filtri yoki "Қарздорлар" (> 3) belgilansa: faqat qarzi shu summadan katta
+  invoyslar chiqadi; mijoz qatori shu invoyslar yig'indisi bo'ladi.
 
 Natija daraxt ko'rinishida: mijoz qatori -> uning tovarlari.
 """
@@ -29,6 +29,8 @@ from frappe import _
 from frappe.utils import add_months, flt, getdate, today
 
 DEFAULT_GROUP = "Инстаграм"
+# "Қарздорлар": shu summagacha bo'lgan qoldiq yopilgan deb olinadi
+DEBTOR_THRESHOLD = 3
 
 
 def execute(filters=None):
@@ -129,25 +131,8 @@ def get_data(filters):
 		)
 	)
 
-	# Invoys qatori uchun: har bir invoysga bog'langan to'lovlar va qoldiq (davrdan qat'i nazar)
+	invoice_ledger = get_invoice_ledger(filters)
 	invoice_names = tuple({r.invoice for r in items}) or ("",)
-	invoice_ledger = {
-		r.invoice: r
-		for r in frappe.db.sql(
-			"""
-			SELECT against_voucher_no AS invoice,
-				-SUM(CASE WHEN voucher_no != against_voucher_no THEN amount ELSE 0 END) AS paid,
-				SUM(amount) AS outstanding
-			FROM `tabPayment Ledger Entry`
-			WHERE delinked = 0 AND party_type = 'Customer'
-				AND against_voucher_type = 'Sales Invoice'
-				AND against_voucher_no IN %(invoices)s
-			GROUP BY against_voucher_no
-			""",
-			{"invoices": invoice_names},
-			as_dict=True,
-		)
-	}
 
 	# Kassa Komment Sales Order'da turadi (tasdiqlangandan keyin ham o'zgarishi mumkin) —
 	# invoysga ko'chirilmaydi, shu yerda zakaz orqali olinadi
@@ -168,27 +153,9 @@ def get_data(filters):
 			kassa_comments[r.invoice].append(comment)
 
 	min_debt = flt(filters.min_debt)
+	if filters.only_debtors:
+		min_debt = max(min_debt, DEBTOR_THRESHOLD)
 	if min_debt > 0:
-		# To'lovlar ko'pincha invoysga bog'lanmagan (PLE qoldig'i = to'liq summa), shuning
-		# uchun mijozning GL qarzi invoyslarga FIFO bo'yicha taqsimlanadi: to'lovlar eng
-		# eski invoyslarni yopadi, qolgan qarz eng yangi invoyslarda turadi.
-		ple_company = "AND company = %(company)s" if filters.company else ""
-		remaining = {c: flt(debt.get(c)) for c in customers}
-		for r in frappe.db.sql(
-			f"""
-			SELECT party, voucher_no AS invoice, amount
-			FROM `tabPayment Ledger Entry`
-			WHERE delinked = 0 AND party_type = 'Customer' AND party IN %(customers)s
-				AND voucher_type = 'Sales Invoice' AND voucher_no = against_voucher_no
-				AND amount > 0 AND posting_date <= %(to_date)s {ple_company}
-			ORDER BY posting_date DESC, creation DESC
-			""",
-			filters,
-			as_dict=True,
-		):
-			inv_debt = min(flt(r.amount), max(remaining[r.party], 0))
-			remaining[r.party] -= inv_debt
-			invoice_ledger[r.invoice] = frappe._dict(paid=flt(r.amount) - inv_debt, outstanding=inv_debt)
 		items = [
 			r for r in items if r.invoice in invoice_ledger and flt(invoice_ledger[r.invoice].outstanding) > min_debt
 		]
@@ -295,3 +262,51 @@ def get_data(filters):
 			}
 		)
 	return data
+
+
+def get_invoice_ledger(filters):
+	"""Invoys -> {paid, outstanding}, PLE bo'yicha "Охирги сана"гача.
+
+	To'lovlar ko'pincha invoysga bog'lanmaydi (PLE'da o'ziga bog'langan avans bo'lib
+	turadi) — bunday kreditlar va manfiy qoldiqli invoyslar (bog'lanmagan qaytarish,
+	ortiqcha to'lov) eng eski ochiq invoyslarni FIFO yopadi. Bog'langan to'lovlar
+	(Payment Reconciliation) o'z invoysida qoladi.
+	"""
+	ple_company = "AND company = %(company)s" if filters.company else ""
+	rows = frappe.db.sql(
+		f"""
+		SELECT party, against_voucher_type, against_voucher_no,
+			SUM(amount) AS outstanding,
+			-SUM(CASE WHEN voucher_no != against_voucher_no THEN amount ELSE 0 END) AS paid,
+			MIN(posting_date) AS posting_date
+		FROM `tabPayment Ledger Entry`
+		WHERE delinked = 0 AND party_type = 'Customer' AND party IN %(customers)s
+			AND posting_date <= %(to_date)s {ple_company}
+		GROUP BY party, against_voucher_type, against_voucher_no
+		ORDER BY posting_date, against_voucher_no
+		""",
+		filters,
+		as_dict=True,
+	)
+
+	ledger, credit = {}, {}
+	for r in rows:
+		if r.against_voucher_type == "Sales Invoice" and flt(r.outstanding) > 0:
+			ledger[r.against_voucher_no] = frappe._dict(
+				party=r.party, paid=flt(r.paid), outstanding=flt(r.outstanding)
+			)
+		else:
+			if r.against_voucher_type == "Sales Invoice":
+				ledger[r.against_voucher_no] = frappe._dict(party=r.party, paid=flt(r.paid), outstanding=0)
+			credit[r.party] = credit.get(r.party, 0) - flt(r.outstanding)
+
+	# rows posting_date bo'yicha tartiblangan — ledger ham eski invoysdan boshlanadi
+	for inv in ledger.values():
+		available = credit.get(inv.party, 0)
+		if available <= 0 or inv.outstanding <= 0:
+			continue
+		applied = min(available, inv.outstanding)
+		inv.outstanding -= applied
+		inv.paid += applied
+		credit[inv.party] = available - applied
+	return ledger

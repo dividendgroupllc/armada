@@ -59,6 +59,13 @@ frappe.query_reports["Instagram Mijozlar Hisoboti"] = {
 			fieldtype: "Check",
 			default: 1,
 		},
+		{
+			fieldname: "only_debtors",
+			label: __("Қарздорлар"),
+			fieldtype: "Check",
+			default: 0,
+			description: __("Фақат қарзи 3 $ дан катта инвойслар"),
+		},
 	],
 
 	tree: true,
