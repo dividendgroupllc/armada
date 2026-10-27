@@ -48,6 +48,12 @@ frappe.query_reports["Instagram Mijozlar Hisoboti"] = {
 			default: frappe.defaults.get_user_default("Company"),
 		},
 		{
+			fieldname: "min_debt",
+			label: __("Қарз"),
+			fieldtype: "Float",
+			description: __("Фақат қарзи шу суммадан катта инвойслар"),
+		},
+		{
 			fieldname: "include_returns",
 			label: __("Қайтаришлар билан"),
 			fieldtype: "Check",

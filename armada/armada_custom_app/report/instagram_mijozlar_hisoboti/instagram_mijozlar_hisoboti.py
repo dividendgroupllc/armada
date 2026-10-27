@@ -17,13 +17,16 @@ tovarlar, qancha puli tushgan va qancha qarz qolgan.
   against_voucher yangilanmaydi, faqat PLE yangilanadi.
 - Qarz: "Охирги сана"гача бўлган мижоз балансы (debit - credit), davrdan oldingi
   qoldiq ham kiradi.
+- "Қарз" filtri berilsa: mijozning GL qarzi invoyslarga FIFO bo'yicha taqsimlanadi
+  (to'lovlar eski invoyslarni yopadi) va faqat qarzi shu summadan katta invoyslar chiqadi;
+  mijoz qatori shu invoyslar yig'indisi bo'ladi.
 
 Natija daraxt ko'rinishida: mijoz qatori -> uning tovarlari.
 """
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, getdate, today
+from frappe.utils import add_months, flt, getdate, today
 
 DEFAULT_GROUP = "Инстаграм"
 
@@ -164,6 +167,32 @@ def get_data(filters):
 		if comment and comment not in kassa_comments.setdefault(r.invoice, []):
 			kassa_comments[r.invoice].append(comment)
 
+	min_debt = flt(filters.min_debt)
+	if min_debt > 0:
+		# To'lovlar ko'pincha invoysga bog'lanmagan (PLE qoldig'i = to'liq summa), shuning
+		# uchun mijozning GL qarzi invoyslarga FIFO bo'yicha taqsimlanadi: to'lovlar eng
+		# eski invoyslarni yopadi, qolgan qarz eng yangi invoyslarda turadi.
+		ple_company = "AND company = %(company)s" if filters.company else ""
+		remaining = {c: flt(debt.get(c)) for c in customers}
+		for r in frappe.db.sql(
+			f"""
+			SELECT party, voucher_no AS invoice, amount
+			FROM `tabPayment Ledger Entry`
+			WHERE delinked = 0 AND party_type = 'Customer' AND party IN %(customers)s
+				AND voucher_type = 'Sales Invoice' AND voucher_no = against_voucher_no
+				AND amount > 0 AND posting_date <= %(to_date)s {ple_company}
+			ORDER BY posting_date DESC, creation DESC
+			""",
+			filters,
+			as_dict=True,
+		):
+			inv_debt = min(flt(r.amount), max(remaining[r.party], 0))
+			remaining[r.party] -= inv_debt
+			invoice_ledger[r.invoice] = frappe._dict(paid=flt(r.amount) - inv_debt, outstanding=inv_debt)
+		items = [
+			r for r in items if r.invoice in invoice_ledger and flt(invoice_ledger[r.invoice].outstanding) > min_debt
+		]
+
 	by_customer = {}
 	for row in items:
 		by_customer.setdefault(row.customer, {}).setdefault(row.invoice, []).append(row)
@@ -175,6 +204,12 @@ def get_data(filters):
 		invoices = by_customer.get(customer, {})
 		rows = [r for lines in invoices.values() for r in lines]
 		c_paid, c_debt = paid.get(customer) or 0, debt.get(customer) or 0
+		if min_debt > 0:
+			# Mijoz qatori faqat filtrdan o'tgan invoyslardan yig'iladi
+			if not rows:
+				continue
+			c_paid = sum(flt(invoice_ledger[i].paid) for i in invoices)
+			c_debt = sum(flt(invoice_ledger[i].outstanding) for i in invoices)
 		if not rows and not c_paid and not c_debt:
 			continue
 		qty = sum(r.qty for r in rows)
