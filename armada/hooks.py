@@ -64,6 +64,7 @@ doc_events = {
         "validate": "armada.armada_custom_app.barcode.sync_item_barcode_display",
     },
     "Sales Order": {
+        "validate": "armada.armada_custom_app.events.sales_order.validate_hudud",
         "on_submit": [
             "armada.armada_custom_app.events.sales_order.on_sales_order_submit",
             "armada.armada_custom_app.events.production_from_sales_order.create_production_entries",
@@ -160,7 +161,8 @@ doctype_js = {
 		"public/js/default_vaqt.js",
 	],
 	"Purchase Receipt": ["public/js/ombor_qoldiq.js", "public/js/default_vaqt.js"],
-	"Purchase Invoice": "public/js/ombor_qoldiq.js",
+	"Purchase Invoice": ["public/js/ombor_qoldiq.js", "public/js/supplier_qarz.js"],
+	"Sales Order": "public/js/sales_order_hudud.js",
 }
 doctype_list_js = {
 	"Sales Order": "public/js/sales_order_list.js",

@@ -20,3 +20,5 @@ armada.patches.sync_sales_invoice_customer_group
 armada.patches.add_crm_id_fields
 armada.patches.add_kassa_komment_field
 armada.patches.add_sales_order_hudud_field
+armada.patches.add_sales_order_hudud_viloyatlar
+armada.patches.add_purchase_invoice_supplier_qarz_field

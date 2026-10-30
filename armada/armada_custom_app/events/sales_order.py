@@ -5,6 +5,22 @@ from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 
 
 AUTO_CREATED_FIELD = "custom_auto_created_from_sales_order"
+HUDUD_FIELD = "custom_hudud"
+ESKI_HUDUD = "Viloyat"
+
+
+def validate_hudud(doc, method=None):
+    """Eskirgan "Viloyat" qiymatini faqat eski zakazlarda (va ularning amend'ida) qoldiramiz."""
+    if doc.get(HUDUD_FIELD) != ESKI_HUDUD:
+        return
+
+    if doc.is_new():
+        if doc.amended_from:
+            return
+    elif doc.get_db_value(HUDUD_FIELD) == ESKI_HUDUD:
+        return
+
+    frappe.throw(_("Hudud: \"Viloyat\" o'rniga aniq viloyatni tanlang."))
 
 
 def on_sales_order_submit(doc, method=None):
