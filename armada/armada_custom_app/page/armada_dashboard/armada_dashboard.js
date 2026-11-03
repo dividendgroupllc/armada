@@ -52,11 +52,18 @@ class ArmadaDashboard {
 			from_date: _month_ago,
 			to_date: _today
 		};
+		this.fg_filters = {
+			to_date: _today,
+			search: ''
+		};
+		// Prefix groups the user has expanded (kept across reloads)
+		this._fg_expanded = new Set();
 
 		// Cached filter options (loaded once at startup)
 		this._sales_filter_options = null;
 		this._cashflow_filter_options = null;
 		this._warehouse_filter_options = null;
+		this._fg_filter_options = null;
 
 		this.init();
 	}
@@ -183,6 +190,45 @@ class ArmadaDashboard {
 			me.apply_page_date_range('warehouse');
 		});
 
+		// ГОТОВАЯ ПРОДУКЦИЯ — single "as of" date
+		this.wrapper.on('click', '#btn-apply-fg-date', function() {
+			const val = me.wrapper.find('#fg-date').val();
+			if (!val) return;
+			me.fg_filters.to_date = val;
+			me._update_fg_date_display();
+			$('.date-range-dropdown').removeClass('show');
+			me.load_finished_goods_data();
+		});
+
+		// ГОТОВАЯ ПРОДУКЦИЯ — expand / collapse a prefix group
+		this.wrapper.on('click', '.fg-group-header', function() {
+			const group = $(this).closest('.fg-group');
+			const prefix = String(group.data('prefix'));
+			group.toggleClass('open');
+			if (group.hasClass('open')) {
+				me._fg_expanded.add(prefix);
+			} else {
+				me._fg_expanded.delete(prefix);
+			}
+		});
+
+		// ГОТОВАЯ ПРОДУКЦИЯ — expand / collapse all
+		this.wrapper.on('click', '#fg-toggle-all', function() {
+			const groups = me.wrapper.find('.fg-group');
+			const open_all = groups.filter('.open').length < groups.length;
+			groups.each(function() {
+				const prefix = String($(this).data('prefix'));
+				$(this).toggleClass('open', open_all);
+				if (open_all) me._fg_expanded.add(prefix); else me._fg_expanded.delete(prefix);
+			});
+		});
+
+		// ГОТОВАЯ ПРОДУКЦИЯ — item name search (debounced)
+		this.wrapper.on('input', '#fg-search', frappe.utils.debounce(function() {
+			me.fg_filters.search = $(this).val();
+			me.load_finished_goods_data();
+		}, 400));
+
 		// Modal close
 		this.wrapper.on('click', '#party-modal-overlay', function(e) {
 			if (e.target === this) {
@@ -223,6 +269,7 @@ class ArmadaDashboard {
 		if (page === 'pl') return this.pl_filters;
 		if (page === 'counterparties') return this.counterparties_filters;
 		if (page === 'warehouse') return this.warehouse_filters;
+		if (page === 'finished_goods') return this.fg_filters;
 		return this.main_filters;
 	}
 
@@ -264,6 +311,18 @@ class ArmadaDashboard {
 				}
 			}
 		});
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_finished_goods_filter_options',
+			freeze: false,
+			callback: function(r) {
+				if (r.message) {
+					me._fg_filter_options = r.message;
+					if (me.current_page === 'finished_goods') {
+						me._apply_fg_filter_options();
+					}
+				}
+			}
+		});
 	}
 
 	_apply_sales_filter_options() {
@@ -287,6 +346,13 @@ class ArmadaDashboard {
 			this._populate_multi_select('wh_warehouses', this._warehouse_filter_options.warehouses || []);
 			this._populate_multi_select('wh_item_groups', this._warehouse_filter_options.item_groups || []);
 			this._populate_multi_select('wh_items', this._warehouse_filter_options.items || []);
+		}
+	}
+
+	_apply_fg_filter_options() {
+		if (this._fg_filter_options) {
+			this._populate_multi_select('fg_warehouses', this._fg_filter_options.warehouses || []);
+			this._populate_multi_select('fg_prefixes', this._fg_filter_options.prefixes || []);
 		}
 	}
 
@@ -357,6 +423,9 @@ class ArmadaDashboard {
 				break;
 			case 'warehouse':
 				this.render_warehouse_page();
+				break;
+			case 'finished_goods':
+				this.render_finished_goods_page();
 				break;
 		}
 	}
@@ -828,6 +897,8 @@ class ArmadaDashboard {
 				me.load_cashflow_data();
 			} else if (page === 'warehouse') {
 				me.load_warehouse_data();
+			} else if (page === 'finished_goods') {
+				me.load_finished_goods_data();
 			}
 		});
 
@@ -848,6 +919,8 @@ class ArmadaDashboard {
 				me.load_cashflow_data();
 			} else if (page === 'warehouse') {
 				me.load_warehouse_data();
+			} else if (page === 'finished_goods') {
+				me.load_finished_goods_data();
 			}
 		});
 	}
@@ -2370,6 +2443,203 @@ class ArmadaDashboard {
 		`;
 
 		$('#warehouse-stock-table').html(html);
+	}
+
+	// ==================== ГОТОВАЯ ПРОДУКЦИЯ ====================
+	render_finished_goods_page() {
+		$('#page-title').text('ГОТОВАЯ ПРОДУКЦИЯ — ОСТАТКИ');
+
+		const content = `
+			<div class="finished-goods-page">
+				<div class="dark-filter-bar">
+					<div class="filter-item multi-select-wrapper" data-filter="fg_warehouses">
+						<div class="multi-select-toggle dark-select">
+							<span class="ms-placeholder">Склад</span>
+							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="multi-select-dropdown">
+							<div class="ms-options"></div>
+						</div>
+					</div>
+					<div class="filter-item multi-select-wrapper" data-filter="fg_prefixes">
+						<div class="multi-select-toggle dark-select">
+							<span class="ms-placeholder">Группа</span>
+							<span class="ms-count" style="display:none"></span>
+							<span class="ms-clear" style="display:none">clear</span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="multi-select-dropdown">
+							<input type="text" class="ms-search" placeholder="Поиск...">
+							<div class="ms-options"></div>
+						</div>
+					</div>
+					<div class="filter-item">
+						<input type="text" id="fg-search" class="dark-select fg-search-input"
+							placeholder="Поиск по наименованию..." autocomplete="off">
+					</div>
+					<div class="filter-item date-range-item">
+						<div class="dark-date-range" id="fg-date-range">
+							<span class="date-range-text"></span>
+							<i class="fa fa-chevron-down"></i>
+						</div>
+						<div class="date-range-dropdown">
+							<div class="date-inputs">
+								<span class="date-separator">На дату</span>
+								<input type="date" id="fg-date" class="date-input-dark">
+							</div>
+							<button class="btn-apply-date" id="btn-apply-fg-date">Применить</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="kpi-cards-row">
+					<div class="kpi-card">
+						<div class="kpi-label">Общее кол-во</div>
+						<div class="kpi-value" id="fg-total-qty">0</div>
+					</div>
+					<div class="kpi-card">
+						<div class="kpi-label">Общая стоимость</div>
+						<div class="kpi-value" id="fg-total-value">$0</div>
+					</div>
+					<div class="kpi-card">
+						<div class="kpi-label">Кол-во наименований</div>
+						<div class="kpi-value" id="fg-item-count">0</div>
+					</div>
+					<div class="kpi-card">
+						<div class="kpi-label">Кол-во групп</div>
+						<div class="kpi-value" id="fg-group-count">0</div>
+					</div>
+				</div>
+
+				<div class="chart-container full">
+					<div class="chart-title fg-title-row">
+						<span>ГРУППЫ ПО НАИМЕНОВАНИЮ</span>
+						<button class="fg-toggle-all" id="fg-toggle-all">Развернуть / свернуть все</button>
+					</div>
+					<div id="fg-groups">
+						<div class="armada-modal-loading">Загрузка...</div>
+					</div>
+				</div>
+			</div>
+		`;
+
+		$('#page-content').html(content);
+		this.wrapper.find('#fg-date').val(this.fg_filters.to_date);
+		this.wrapper.find('#fg-search').val(this.fg_filters.search);
+		this._update_fg_date_display();
+		this._apply_fg_filter_options();
+		this._bind_filter_events('finished_goods');
+		this.load_finished_goods_data();
+	}
+
+	_update_fg_date_display() {
+		this.wrapper.find('#fg-date-range .date-range-text')
+			.text('На ' + this.format_date_display_text(this.fg_filters.to_date));
+	}
+
+	load_finished_goods_data() {
+		const me = this;
+		const args = { to_date: this.fg_filters.to_date };
+		const warehouses = this._get_multi_select_values('fg_warehouses');
+		const prefixes = this._get_multi_select_values('fg_prefixes');
+		if (warehouses.length) args.warehouses = JSON.stringify(warehouses);
+		if (prefixes.length) args.prefixes = JSON.stringify(prefixes);
+		if (this.fg_filters.search) args.search = this.fg_filters.search;
+
+		// Ignore responses from older requests (fast typing in search)
+		const req_id = (this._fg_req_id = (this._fg_req_id || 0) + 1);
+
+		frappe.call({
+			method: 'armada.armada_custom_app.api.dashboard.get_finished_goods_stock',
+			args: args,
+			freeze: false,
+			callback: function(r) {
+				if (req_id !== me._fg_req_id || me.current_page !== 'finished_goods') return;
+				if (r.message) {
+					me.update_fg_kpis(r.message.kpis || {});
+					me.render_fg_groups(r.message);
+				}
+			}
+		});
+	}
+
+	update_fg_kpis(k) {
+		$('#fg-total-qty').text(Number(k.total_qty || 0).toLocaleString('ru-RU'));
+		$('#fg-total-value').text(this.format_currency(k.total_value || 0));
+		$('#fg-item-count').text(k.item_count || 0);
+		$('#fg-group-count').text(k.group_count || 0);
+	}
+
+	render_fg_groups(data) {
+		const groups = data.groups || [];
+		const warehouses = data.warehouses || [];
+		const esc = (v) => frappe.utils.escape_html(String(v == null ? '' : v));
+		const num = (v) => Number(v || 0).toLocaleString('ru-RU');
+
+		if (!groups.length) {
+			$('#fg-groups').html('<p style="color:#94a3b8;text-align:center;padding:20px;">Нет данных</p>');
+			return;
+		}
+
+		const max_qty = Math.max(...groups.map(g => g.total_qty));
+		// Short warehouse labels for column headers ("Склад ГП - AM" → "Склад ГП")
+		const wh_label = (w) => w.replace(/\s-\s[^-]+$/, '');
+
+		let html = '';
+		groups.forEach(g => {
+			const open = this._fg_expanded.has(String(g.prefix)) ? ' open' : '';
+			const bar = max_qty > 0 ? (g.total_qty / max_qty) * 100 : 0;
+
+			let rows = '';
+			g.items.forEach((it, i) => {
+				const wh_cells = warehouses.map(w => {
+					const q = (it.by_warehouse || {})[w];
+					return `<td class="num">${q ? num(q) : '<span class="fg-zero">—</span>'}</td>`;
+				}).join('');
+				rows += `
+					<tr>
+						<td>${i + 1}</td>
+						<td>${esc(it.item_name)}</td>
+						${wh_cells}
+						<td class="num"><strong>${num(it.qty)}</strong></td>
+						<td class="num">${this.format_currency(it.rate)}</td>
+						<td class="num">${this.format_currency(it.value)}</td>
+					</tr>`;
+			});
+
+			html += `
+				<div class="fg-group${open}" data-prefix="${esc(g.prefix)}">
+					<div class="fg-group-header">
+						<i class="fa fa-chevron-right fg-chevron"></i>
+						<span class="fg-prefix">${esc(g.prefix)}</span>
+						<span class="fg-meta">${g.item_count} наим.</span>
+						<div class="fg-bar-wrap"><div class="fg-bar" style="width:${bar}%"></div></div>
+						<span class="fg-qty">${num(g.total_qty)} шт</span>
+						<span class="fg-value">${this.format_currency(g.total_value)}</span>
+					</div>
+					<div class="fg-group-body">
+						<div class="data-table-wrapper">
+							<table class="data-table small">
+								<thead>
+									<tr>
+										<th>№</th>
+										<th>Наименование</th>
+										${warehouses.map(w => `<th class="num" title="${esc(w)}">${esc(wh_label(w))}</th>`).join('')}
+										<th class="num">Итого кол-во</th>
+										<th class="num">Цена</th>
+										<th class="num">Стоимость</th>
+									</tr>
+								</thead>
+								<tbody>${rows}</tbody>
+							</table>
+						</div>
+					</div>
+				</div>`;
+		});
+
+		$('#fg-groups').html(html);
 	}
 
 	// ==================== UTILITY METHODS ====================

@@ -65,6 +65,12 @@ from armada.armada_custom_app.api.warehouse import (  # noqa: F401
 	get_warehouse_stock_data,
 )
 
+# ── ГОТОВАЯ ПРОДУКЦИЯ ───────────────────────────────────────────────────────────────
+from armada.armada_custom_app.api.finished_goods import (  # noqa: F401
+	get_finished_goods_filter_options,
+	get_finished_goods_stock,
+)
+
 # ── БАЛАНС ──────────────────────────────────────────────────────────────────────────
 import frappe
 from frappe.utils import flt

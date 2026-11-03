@@ -1800,3 +1800,130 @@ td.highlight-red {
     background: var(--bg-table-header);
     font-weight: 700;
 }
+
+/* ==================== ГОТОВАЯ ПРОДУКЦИЯ ==================== */
+.finished-goods-page .kpi-cards-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.fg-search-input {
+    cursor: text;
+    background-image: none !important;
+}
+
+.fg-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+}
+
+.fg-toggle-all {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--color-secondary);
+    font-size: 12px;
+    padding: 6px 12px;
+    text-transform: none;
+    cursor: pointer;
+}
+
+.fg-toggle-all:hover {
+    border-color: var(--color-accent-blue);
+    color: var(--color-primary);
+}
+
+.fg-group {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+    overflow: hidden;
+}
+
+.fg-group-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    cursor: pointer;
+    background: var(--bg-section);
+    color: var(--color-primary);
+    transition: background 0.15s ease;
+}
+
+.fg-group-header:hover {
+    background: var(--bg-hover);
+}
+
+.fg-chevron {
+    color: var(--color-secondary);
+    transition: transform 0.15s ease;
+    width: 12px;
+}
+
+.fg-group.open .fg-chevron {
+    transform: rotate(90deg);
+}
+
+.fg-prefix {
+    font-weight: 700;
+    font-size: 15px;
+    min-width: 44px;
+}
+
+.fg-meta {
+    color: var(--color-secondary);
+    font-size: 12px;
+    min-width: 70px;
+}
+
+.fg-bar-wrap {
+    flex: 1;
+    height: 6px;
+    background: var(--border-light);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.fg-bar {
+    height: 100%;
+    background: var(--color-accent-blue);
+    border-radius: 3px;
+}
+
+.fg-qty {
+    font-weight: 600;
+    min-width: 80px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.fg-value {
+    color: var(--color-secondary);
+    min-width: 100px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.fg-group-body {
+    display: none;
+    padding: var(--space-sm) var(--space-lg) var(--space-lg);
+}
+
+.fg-group.open .fg-group-body {
+    display: block;
+}
+
+.fg-group-body .data-table-wrapper {
+    max-height: 420px;
+}
+
+.fg-group-body .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.fg-zero {
+    color: var(--color-muted);
+}
