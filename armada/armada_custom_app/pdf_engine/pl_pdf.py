@@ -84,9 +84,19 @@ AVG_ROWS = [
     ("avg_cogs_b2b",          "Средняя себестоимость B2B",       "num2"),
 ]
 
-# ── Программа (5237) — admin oxirida, Стоянка (670) dan keyin ──
+# ── Программа (5237) + Командировочные (5242) — admin oxirida,
+#    Стоянка (670) dan keyin (2 qator) ──
 PROG_INSERT_AFTER_TOP = 675.0
-PROG_INSERT_PT        = 11.6
+PROG_INSERT_PT        = 23.2      # 2 qator × 11.6
+ADMIN_TAIL_ROWS = [("programma",    "Программа"),
+                   ("komandirovka", "Командировочные")]
+
+# ── Pastki bo'sh oraliqni qisqartirish ──
+# Рентабельность по чистой прибыли (867) va С баланса (901) orasidagi bo'sh
+# joydan 1 qator olinadi — aks holda Командировочные qo'shilgach oxirgi
+# qator (Касса %, 956) A3 sahifadan (1191pt) tashqariga chiqib ketadi.
+BOTTOM_GAP_AFTER_TOP = 880.0
+BOTTOM_GAP_PT        = 11.6
 
 # ── Скидка/Бонус: Admin → Kommerciya (root account o'zgargan) ──
 # Template'da admin bo'limida turgan Скидка/Бонус endi Kommerciya bo'limida,
@@ -256,7 +266,7 @@ def _derive(data, n):
            "komis_klik","transport","obed","ofis","arenda_dukon",
            "prazdnik","obuchenie","remont","fin_uslugi",
            "kurs_razn","svyaz","zarplata_adm","yandex","stoyanka",
-           "programma"]
+           "programma","komandirovka"]
     # Инстаграм group (5238) — ko'rinadigan 4 leaf yig'indisi:
     #   target(5239) + yandex_inst(5236, reparent) + target_salary + market_salary.
     # yandex_inst endi com da ALOHIDA emas — instagram_group ichida.
@@ -347,6 +357,8 @@ def _adj_bottom(top_key, bottom):
         b -= MOVE_ROW_PT            # Яндекс инстаграм ko'chirildi → yuqoriga
     if top_key >= MOVE_DOWN_AFTER:
         b += MOVE_DOWN_ROWS * MOVE_ROW_PT   # Kommerciyada 5 yangi qator → pastga
+    if top_key > BOTTOM_GAP_AFTER_TOP:
+        b -= BOTTOM_GAP_PT          # С баланса oldidagi bo'sh joy qisqartirildi
     return b
 
 
@@ -487,20 +499,32 @@ def _draw_avg_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page)
 
 
 def _draw_programma_row(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
-    """Программа (5237) — admin oxirida, Стоянка dan keyin (oq fon)."""
+    """Программа (5237) + Командировочные (5242) — admin oxirida, Стоянка dan
+    keyin. Zebra davom etadi: Стоянка gray → Программа oq → Командировочные gray."""
+    C_GRAY     = Color(0.9529412, 0.9529412, 0.9529412)
     chars_670  = [ch for ch in page.chars
                   if round(ch["top"]) == 670 and ch.get("text","").strip()]
     raw_bottom = chars_670[0]["bottom"] if chars_670 else 677.0
-    by         = rl_y(_adj_bottom(670, raw_bottom) + PROG_INSERT_PT)
-    values     = full.get("programma") or [0.0] * n_cols
+    base_by    = _adj_bottom(670, raw_bottom)                       # Стоянка baseline
+    band_top   = _adj_bottom(STOYANKA_BAND_TOP, STOYANKA_BAND_TOP)  # Стоянка fon top'i
 
-    cv.setFont(std_font, std_size); cv.setFillColor(std_color)
-    cv.drawString(33.5, by, "Программа")
-    for i, cx in enumerate(col_x):
-        v   = values[i] if i < len(values) else 0.0
-        clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
-        cv.setFont(std_font, std_size); cv.setFillColor(clr)
-        cv.drawRightString(cx, by, _fmt(v, "num"))
+    for idx, (dkey, label) in enumerate(ADMIN_TAIL_ROWS):
+        off    = MOVE_ROW_PT * (idx + 1)
+        by     = rl_y(base_by + off)
+        values = full.get(dkey) or [0.0] * n_cols
+
+        if idx % 2 == 1:
+            cv.setFillColor(C_GRAY)
+            cv.rect(31.4, rl_y(band_top + off + MOVE_ROW_PT), 782.8, MOVE_ROW_PT,
+                    stroke=0, fill=1)
+
+        cv.setFont(std_font, std_size); cv.setFillColor(std_color)
+        cv.drawString(33.5, by, label)
+        for i, cx in enumerate(col_x):
+            v   = values[i] if i < len(values) else 0.0
+            clr = C_RED if (isinstance(v, (int, float)) and v < 0) else std_color
+            cv.setFont(std_font, std_size); cv.setFillColor(clr)
+            cv.drawRightString(cx, by, _fmt(v, "num"))
 
 
 def _draw_moved_commer_rows(cv, full, col_x, n_cols, std_font, std_size, std_color, page):
@@ -582,7 +606,7 @@ def generate(data: dict,
     full = {**data, **_derive(data, n_cols)}
     for dkey in ["units_sold","instagram_sold","b2b_sold","pillow_sold",
                  "instagram_revenue","b2b_revenue",
-                 "instagram_cogs","b2b_cogs","programma",
+                 "instagram_cogs","b2b_cogs","programma","komandirovka",
                  "instagram_exp","target","yandex_inst",
                  "target_salary","market_salary",
                  "units_produced","production_cost","production_workers"]:
@@ -792,7 +816,7 @@ def generate(data: dict,
         _draw_avg_rows(cv, full, col_x, n_cols,
                        std_font, std_size, std_color, page)
 
-        # ── Программа — admin bo'limi oxirida ──
+        # ── Программа + Командировочные — admin bo'limi oxirida ──
         _draw_programma_row(cv, full, col_x, n_cols,
                             std_font, std_size, std_color, page)
 

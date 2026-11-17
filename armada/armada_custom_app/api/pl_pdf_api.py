@@ -46,6 +46,7 @@ ACCOUNT_KEY_MAP = {
     "5233 - Услуги": "uslugi",
     "5234 - Канцтовар": "kantc",
     "5237 - Программа": "programma",
+    "5242 - Командировочные": "komandirovka",   # admin oxirida, Программа dan keyin
     # Commercial
     "5218 - Реклама и маркетинг": "reklama",
     "5226 - Хайрия эхсон": "khairiya",
