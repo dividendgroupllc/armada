@@ -54,7 +54,22 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+          # Vaqtincha tarmoq uzilishida keyscan bo'sh qaytishi mumkin — qayta urinish
+          for i in 1 2 3 4 5; do
+            if ssh-keyscan -T 10 -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null \
+               && [ -s ~/.ssh/known_hosts ]; then
+              echo "✅ Host key olindi"; break
+            fi
+            echo "⚠️ ssh-keyscan muvaffaqiyatsiz (urinish $i), 10s kutilmoqda..."
+            sleep 10
+          done
+          [ -s ~/.ssh/known_hosts ] || { echo "❌ Server host key olinmadi"; exit 1; }
+          cat >> ~/.ssh/config << 'EOF'
+          Host *
+            ConnectTimeout 20
+            ServerAliveInterval 30
+            ServerAliveCountMax 10
+          EOF
 
       # ============================================
       # 3. VALIDATE SECRETS
@@ -81,13 +96,28 @@ jobs:
       - name: Check Deployment Status
         id: check_deploy
         run: |
-          # Serverda frappe-bench bormi tekshirish
-          if ssh root@${{ secrets.SERVER_IP }} "[ -d ${{ env.BENCH_PATH }} ]"; then
+          # Serverda frappe-bench bormi tekshirish.
+          # MUHIM: ssh ulanish xatosi (exit 255) "bench yo'q" degani EMAS —
+          # avval shunday talqin qilinib, deploy "Fresh Deployment"ga tushib qolgan edi.
+          for i in 1 2 3 4 5; do
+            set +e
+            ssh root@${{ secrets.SERVER_IP }} "[ -d ${{ env.BENCH_PATH }} ]"
+            rc=$?
+            set -e
+            [ $rc -ne 255 ] && break
+            echo "⚠️ SSH ulanish xatosi (urinish $i), 15s kutilmoqda..."
+            sleep 15
+          done
+
+          if [ $rc -eq 0 ]; then
             echo "deployment_exists=true" >> $GITHUB_OUTPUT
             echo "📦 Existing deployment found - will update"
-          else
+          elif [ $rc -eq 1 ]; then
             echo "deployment_exists=false" >> $GITHUB_OUTPUT
             echo "🆕 No deployment found - will do fresh install"
+          else
+            echo "❌ ERROR: Serverga SSH orqali ulanib bo'lmadi (exit $rc)"
+            exit 1
           fi
 
       # ============================================
