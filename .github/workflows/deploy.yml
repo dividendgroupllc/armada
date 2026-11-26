@@ -117,6 +117,11 @@ jobs:
             echo "🆕 No deployment found - will do fresh install"
           else
             echo "❌ ERROR: Serverga SSH orqali ulanib bo'lmadi (exit $rc)"
+            echo "---- SSH diagnostika (ssh -v) ----"
+            ssh -v -o BatchMode=yes root@${{ secrets.SERVER_IP }} true 2>&1 \
+              | grep -Ei "Offering|Server accepts|Authentications that can continue|Permission denied|expired|denied|refused|closed|reset|banner|Load key|invalid format|no such identity|Connection" \
+              | tail -25 || true
+            echo "Key fingerprint: $(ssh-keygen -lf ~/.ssh/id_rsa 2>&1)"
             exit 1
           fi
 
