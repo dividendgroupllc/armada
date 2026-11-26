@@ -33,6 +33,42 @@ from armada.armada_custom_app.api.utils import (
 )
 
 
+# ── Line cost ───────────────────────────────────────────────────────────────
+# Auto-created invoices (update_stock=0) are submitted when the cashier approves
+# the Sales Order — usually before the goods are produced into the warehouse —
+# so ERPNext stores `incoming_rate = 0` on them and never recalculates it.
+# The real cost is booked later on the Delivery Note's Stock Ledger Entry
+# (and kept up to date by reposts), so read it from there via so_detail /
+# dn_detail and fall back to the invoice's own rate only when no DN exists.
+_DN_RATE_SQL = """
+	SELECT SUM(-_sle.stock_value_difference) / NULLIF(SUM(-_sle.actual_qty), 0)
+	FROM `tabDelivery Note Item` _dni
+	INNER JOIN `tabStock Ledger Entry` _sle
+		ON _sle.voucher_detail_no = _dni.name
+		AND _sle.voucher_type = 'Delivery Note'
+		AND _sle.is_cancelled = 0
+		AND _sle.item_code = {sii}.item_code
+	WHERE _dni.docstatus = 1 AND {match}
+"""
+
+
+def _line_cost_sql(si_alias="si", sii_alias="sii"):
+	"""SQL expression for the cost of one Sales Invoice Item row (company currency)."""
+	by_dn_detail = _DN_RATE_SQL.format(sii=sii_alias, match=f"_dni.name = {sii_alias}.dn_detail")
+	by_so_detail = _DN_RATE_SQL.format(sii=sii_alias, match=f"_dni.so_detail = {sii_alias}.so_detail")
+	return f"""(
+		CASE
+			WHEN {si_alias}.update_stock = 1 OR {si_alias}.is_return = 1
+				THEN IFNULL({sii_alias}.incoming_rate, 0)
+			WHEN IFNULL({sii_alias}.dn_detail, '') != ''
+				THEN COALESCE(({by_dn_detail}), {sii_alias}.incoming_rate, 0)
+			WHEN IFNULL({sii_alias}.so_detail, '') != ''
+				THEN COALESCE(({by_so_detail}), {sii_alias}.incoming_rate, 0)
+			ELSE IFNULL({sii_alias}.incoming_rate, 0)
+		END * {sii_alias}.stock_qty
+	)"""
+
+
 # ── Helpers for multi-select filters ────────────────────────────────────────
 
 def _parse_json_list(val):
@@ -162,13 +198,13 @@ def _get_filtered_sales_summary(from_date, to_date, item_names, item_groups, cus
 		SELECT
 			SUM(sii.qty) AS qty,
 			SUM(sii.amount) AS amount,
-			SUM(IFNULL(sii.incoming_rate, 0) * sii.qty) AS cost
+			SUM({cost}) AS cost
 		FROM `tabSales Invoice Item` sii
 		INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 		{joins}
 		WHERE si.docstatus = 1 AND si.posting_date BETWEEN %s AND %s
 		{where}
-	""".format(joins=joins, where=where),
+	""".format(joins=joins, where=where, cost=_line_cost_sql()),
 		[from_date, to_date] + params, as_dict=True)
 
 	if result and result[0]:
@@ -239,7 +275,7 @@ def get_product_ranking(from_date=None, to_date=None,
 	data = frappe.db.sql("""
 		SELECT sii.item_code, sii.item_name, SUM(sii.qty) AS qty,
 			   SUM(sii.amount) AS amount,
-			   SUM(IFNULL(sii.incoming_rate, 0) * sii.qty) AS cost
+			   SUM({cost}) AS cost
 		FROM `tabSales Invoice Item` sii
 		INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 		{joins}
@@ -247,7 +283,7 @@ def get_product_ranking(from_date=None, to_date=None,
 		{where}
 		GROUP BY sii.item_code, sii.item_name
 		ORDER BY amount DESC
-	""".format(joins=joins, where=where),
+	""".format(joins=joins, where=where, cost=_line_cost_sql()),
 		[from_date, to_date] + fparams, as_dict=True)
 
 	if not data:

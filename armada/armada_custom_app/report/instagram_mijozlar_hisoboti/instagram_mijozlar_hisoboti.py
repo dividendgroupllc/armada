@@ -34,6 +34,17 @@ DEBTOR_THRESHOLD = 3
 
 
 def execute(filters=None):
+	filters = prepare_filters(filters)
+	filters.customer_group = filters.customer_group or DEFAULT_GROUP
+	customers = frappe.get_all(
+		"Customer",
+		filters={"customer_group": filters.customer_group, **({"name": filters.customer} if filters.customer else {})},
+		pluck="name",
+	)
+	return get_columns(), get_data(filters, customers)
+
+
+def prepare_filters(filters):
 	filters = frappe._dict(filters or {})
 	if not filters.to_date:
 		filters.to_date = today()
@@ -41,9 +52,7 @@ def execute(filters=None):
 		filters.from_date = add_months(filters.to_date, -1)
 	if getdate(filters.from_date) > getdate(filters.to_date):
 		filters.from_date, filters.to_date = filters.to_date, filters.from_date
-	filters.customer_group = filters.customer_group or DEFAULT_GROUP
-
-	return get_columns(), get_data(filters)
+	return filters
 
 
 def get_columns():
@@ -63,12 +72,9 @@ def get_columns():
 	]
 
 
-def get_data(filters):
-	customers = frappe.get_all(
-		"Customer",
-		filters={"customer_group": filters.customer_group, **({"name": filters.customer} if filters.customer else {})},
-		pluck="name",
-	)
+def get_data(filters, customers):
+	"""Hisobot qatorlari; customers — qaysi mijozlar kirishini chaqiruvchi hisobot belgilaydi
+	(Sotuv Hisoboti ham shu funksiyadan foydalanadi)."""
 	if not customers:
 		return []
 	filters.customers = tuple(customers)

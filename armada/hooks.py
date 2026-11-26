@@ -72,6 +72,9 @@ doc_events = {
         "before_cancel": "armada.armada_custom_app.events.sales_order.before_sales_order_cancel",
         "on_cancel": "armada.armada_custom_app.events.production_from_sales_order.release_production_entries",
     },
+    "Stock Entry": {
+        "validate": "armada.armada_custom_app.events.stock_entry.block_zero_valuation_repack",
+    },
     "Cash Flow Categories": {
         "on_update": "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
         "on_trash":  "armada.armada_custom_app.report.direct_cash_flow.direct_cash_flow.clear_cache",
